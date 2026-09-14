@@ -4365,8 +4365,7 @@ function accessRuleSummary(rule, gateway, layerName, layerUid = "", packageLooku
   const stealthMatch = isAnyObject(source)
     && fieldContainsObjectRef(destination, destinationRefs)
     && isAnyObject(service)
-    && normalizeToken(actionName) === "drop"
-    && normalizeToken(logStatus) === "log";
+    && normalizeToken(actionName) === "drop";
   const resolvedLayerName = accessRuleLayerName(rule, layerName) || "Unknown";
   const resolvedLayerUid = accessRuleLayerUid(rule, layerUid);
   return {
@@ -4517,6 +4516,7 @@ function whereUsedDestinationCandidates(data, objectRef) {
   const objectTokens = objectRefTokens([objectRef]);
   function pushCandidate(node, path) {
     if (!node || typeof node !== "object" || Array.isArray(node)) return;
+    if (whereUsedNodeIsHttpsInspection(node, path)) return;
     const layerValue = node.layer || node["access-layer"] || node["access-layer-name"] || node["layer-name"];
     const layerName = typeof layerValue === "object" && layerValue ? layerValue.name || layerValue.uid : layerValue;
     const layerUid = typeof layerValue === "object" && layerValue ? layerValue.uid || "" : "";
@@ -4562,11 +4562,27 @@ function whereUsedDestinationCandidates(data, objectRef) {
   return candidates;
 }
 
+function whereUsedNodeIsHttpsInspection(node, path = []) {
+  const context = normalizeToken([
+    ...path,
+    node?.type,
+    node?.["object-type"],
+    node?.objectType,
+    node?.["rule-type"],
+    node?.context
+  ].filter(Boolean).join(" "));
+  return context.includes("httpsrule")
+    || context.includes("httpsinspection")
+    || context.includes("tlsrule")
+    || context.includes("sslinspection");
+}
+
 function whereUsedAccessRuleCandidates(data, objectRef) {
   const candidates = [];
   const seen = new Set();
-  function pushCandidate(node) {
+  function pushCandidate(node, path) {
     if (!node || typeof node !== "object" || Array.isArray(node)) return;
+    if (whereUsedNodeIsHttpsInspection(node, path)) return;
     const layerValue = node.layer || node["access-layer"] || node["access-layer-name"] || node["layer-name"];
     const layerName = typeof layerValue === "object" && layerValue ? layerValue.name || layerValue.uid : layerValue;
     const layerUid = typeof layerValue === "object" && layerValue ? layerValue.uid || "" : "";
@@ -4585,14 +4601,16 @@ function whereUsedAccessRuleCandidates(data, objectRef) {
       }
     }
   }
-  function walk(node) {
+  function walk(node, path = []) {
     if (!node || typeof node !== "object") return;
     if (Array.isArray(node)) {
-      node.forEach(walk);
+      node.forEach((item, index) => walk(item, [...path, String(index)]));
       return;
     }
-    pushCandidate(node);
-    Object.values(node).forEach(walk);
+    pushCandidate(node, path);
+    for (const [key, value] of Object.entries(node)) {
+      walk(value, [...path, key]);
+    }
   }
   walk(data);
   return candidates;
