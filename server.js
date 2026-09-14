@@ -8,6 +8,10 @@ import { extname, join, normalize } from "node:path";
 import { randomUUID } from "node:crypto";
 import { isIP } from "node:net";
 import JSZip from "jszip";
+import { collectPages, scopedCommandKey, collectionOutcome } from "./lib/collection.js";
+import { operationContext, beginOperation, finishOperation, assertNotCancelled, trackRequest } from "./lib/operations.js";
+import { checkOwnerScope, withFindingIdentity } from "./public/finding-model.js";
+const STANDARD_API_CONCURRENCY = positiveIntegerEnv("API_CONCURRENCY", 10);
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "127.0.0.1";
@@ -406,13 +410,13 @@ function recordScanCommand(session, entry) {
 }
 
 function cpRequest(session, command, body = {}) {
-  if (command === "show-logs") {
-    return showLogsQueue(() => cpRequestUnqueued(session, command, body));
-  }
-  if (session?.scanApiQueue && command !== "login") {
-    return session.scanApiQueue(() => cpRequestUnqueued(session, command, body));
-  }
-  return cpRequestUnqueued(session, command, body);
+  const operation = operationContext.getStore()?.operation;
+  return trackRequest(operation, () => {
+    const execute = () => { assertNotCancelled(operation); return cpRequestUnqueued(session, command, body); };
+    if (command === "show-logs") return showLogsQueue(execute);
+    if (session?.scanApiQueue && command !== "login") return session.scanApiQueue(execute);
+    return execute();
+  });
 }
 
 function cpRequestUnqueued(session, command, body = {}) {
@@ -809,9 +813,16 @@ function isExpiredSessionError(error) {
 }
 
 async function tryCommand(session, command, body = {}) {
+  assertNotCancelled(operationContext.getStore()?.operation);
+  if (command === "show-access-rulebase" && body.offset === undefined) {
+    return { command, ...await collectPages(
+      page => tryCommand(session, command, { ...body, ...page }),
+      { key: "rulebase", limit: PAGE_LIMIT }
+    ) };
+  }
   const cache = session.scanCommandCache;
   const cacheable = cache && SCAN_CACHEABLE_COMMANDS.has(command);
-  const cacheKey = cacheable ? `${command}:${stableJson(body)}` : "";
+  const cacheKey = cacheable ? scopedCommandKey(session, command, body, stableJson) : "";
   if (cacheable && cache.has(cacheKey)) {
     return cache.get(cacheKey);
   }
@@ -819,7 +830,7 @@ async function tryCommand(session, command, body = {}) {
     try {
       return { ok: true, command, data: await cpRequest(session, command, body) };
     } catch (error) {
-      if (isExpiredSessionError(error)) {
+      if (isExpiredSessionError(error) || error.code === "SCAN_CANCELLED") {
         throw error;
       }
       return { ok: false, command, error: commandError(error) };
@@ -832,32 +843,17 @@ async function tryCommand(session, command, body = {}) {
 }
 
 async function listObjects(session, command, body = {}) {
-  const objects = [];
-  let offset = 0;
-  let total = 0;
-  do {
-    const page = await cpRequest(session, command, {
-      limit: PAGE_LIMIT,
-      offset,
-      "details-level": "full",
-      ...body
-    });
-    objects.push(...(page.objects || page.packages || []));
-    total = Number(page.total || objects.length);
-    offset += PAGE_LIMIT;
-  } while (offset < total);
-  return objects;
+  const result = await tryListObjects(session, command, body);
+  if (!result.ok) throw Object.assign(new Error(result.error?.error || "Object collection incomplete."), result.error);
+  return result.objects;
 }
 
 async function tryListObjects(session, command, body = {}) {
-  try {
-    return { ok: true, command, objects: await listObjects(session, command, body) };
-  } catch (error) {
-    if (isExpiredSessionError(error)) {
-      throw error;
-    }
-    return { ok: false, command, error: commandError(error), objects: [] };
-  }
+  const result = await collectPages(
+    page => tryCommand(session, command, { "details-level": "full", ...body, ...page }),
+    { limit: PAGE_LIMIT }
+  );
+  return { ...result, command, objects: result.data.objects || [] };
 }
 
 async function tryListSystemDataObjects(session, command, body = {}) {
@@ -1056,7 +1052,10 @@ function makeCheck({ id, category, title, recommendation, recommendationWarning 
     remediation,
     detailTone,
     review,
-    hideBadges
+    hideBadges,
+    ownership: { scope: checkOwnerScope({ id }) },
+    evaluationStatus: status,
+    collection: { status: "not-reported", errors: [] }
   };
 }
 
@@ -5155,7 +5154,7 @@ async function collectGatewayStealthRuleEvidence(session, gatewaysResult, packag
       });
       if (!rulebase.ok) {
         fallbackErrors.push({ layer: layerLookupName, rulebase: "direct-access-rulebase", error: rulebase.error });
-        continue;
+        if (!rulebase.data?.rulebase?.length) continue;
       }
       inspectedRulebases += 1;
       const dictionary = objectDictionaryMap(rulebase.data);
@@ -6455,11 +6454,12 @@ function evaluateGatewayStealthRules(result, session) {
   const missingNames = (result.missingGateways || []).map((gateway) => gateway.name || gateway.uid).filter(Boolean);
   if (missingNames.length) {
     evidenceTables.push({
-      title: "Missing Stealth Rules",
+      title: result.ok ? "Missing Stealth Rules" : "Stealth Rules Not Verified",
       columns: ["Gateway", "Finding"],
       rows: missingNames.map((name) => ({
         "Gateway": name,
-        "Finding": `${name} does not have a stealth rule. Please remediate this.`
+        "Finding": result.ok ? `${name} does not have a stealth rule. Please remediate this.`
+          : `${name}: no matching rule in the collected evidence. Policy collection was incomplete; verify manually.`
       }))
     });
   }
@@ -6474,7 +6474,7 @@ function evaluateGatewayStealthRules(result, session) {
     !allMatched && hasGatewayInventory ? `No matching stealth rule was found for: ${missingNames.join(", ")}.` : "",
     lookupFailureWarning
   ].filter(Boolean);
-  const status = !hasGatewayInventory || (failedLookups && !hasPolicyEvidence)
+  const status = !hasGatewayInventory || (failedLookups && !allMatched)
     ? "unknown"
     : (reviewedThisLogin ? "reviewed" : (allMatched ? "needs-review" : "remediation-required"));
 
@@ -7760,7 +7760,7 @@ async function scanHardening(session) {
   session.adminLastLoginCache = new Map();
   session.scanCommandCache = new Map();
   session.scanCommandLog = [];
-  session.scanApiQueue = session.largeEnvironmentMode ? createLimiter(LARGE_ENV_API_CONCURRENCY) : null;
+  session.scanApiQueue = createLimiter(session.largeEnvironmentMode ? LARGE_ENV_API_CONCURRENCY : STANDARD_API_CONCURRENCY);
   session.scanProgress = {
     active: true,
     failed: false,
@@ -7917,6 +7917,43 @@ async function scanHardening(session) {
   ];
   checks = moveCategoryBefore(checks, "Limiting Third-Party Integration Credentials", "Updates, Health, and Ongoing Protection");
 
+  const adminPolicyResults = [defaultAdministratorSettings, smartConsoleIdleTimeout, loginRestrictions, cpPasswordRequirements];
+  const adminPolicyCollection = { ok: adminPolicyResults.every(result => result.ok),
+    errors: adminPolicyResults.filter(result => !result.ok).map(result => result.error),
+    rows: adminPolicyResults.filter(result => result.ok).map(result => result.data) };
+  const collected = {
+    "admin.accounts": administrators,
+    "admin.api-key-authentication": administrators,
+    "admin.password-idle-lockout": adminPolicyCollection,
+    "admin.mfa-idp": defaultAdministratorSettings,
+    "mgmt.protected-segment": managementFirewallProtection,
+    "mgmt.admin-source-ip": administrativeSourceIpAddresses,
+    "mgmt.trusted-clients": trustedClients,
+    "mgmt.api-access": apiSettings,
+    "policy.implied-rules": globalProperties,
+    "updates.dynamic-updates": globalProperties,
+    "updates.cpdiag": globalProperties,
+    "updates.jumbo-hotfix": jumboHotfixEvidence,
+    "policy.stealth-rule": gatewayStealthRules,
+    "integrations.active-directory": activeDirectoryIntegrations,
+    "integrations.cloud-controllers": dataCenterServers,
+    "gaia.allowed-host-access": gaiaAllowedHostAccess,
+    "gaia.admin-settings": gaiaAdministratorSettings,
+    "gaia.expert-mode-access": gaiaAdministratorSettings,
+    "gaia.password-policy-hardening": gaiaPasswordPolicy,
+    "gaia.snmp-monitoring-hardening": gaiaSnmpMonitoring,
+    "gaia.system-logging-management": gaiaSystemLogging,
+    "gaia.management-external-syslog": gaiaManagementExternalSyslog,
+    "security-feature-usage.licensed-blades": securityFeatureUsage,
+    "security-feature-usage.sizing-statistics": sizingStatistics
+  };
+  const findingContext = { domain: session.domain || "", inventory: gatewaysAndServers.objects || [] };
+  checks = checks.map(check => {
+    const collector = collected[check.id] || (check.id.startsWith("cve.") ? cveIkeEvidence : null);
+    return withFindingIdentity({ ...check, collection: collector ? collectionOutcome(collector)
+      : { status: check.status === "manual" ? "not-assessed" : "not-reported", errors: [] } }, findingContext);
+  });
+
   const result = {
     scannedAt,
     user: currentScan.user,
@@ -7926,6 +7963,7 @@ async function scanHardening(session) {
     managementObjectName: session.managementObjectName || "",
     gatewayTargets: gatewayInventory.runScriptTargets.map((gateway) => gateway.name || gateway.uid).filter(Boolean),
     clusterTargets: gatewayInventory.clusters.map((cluster) => cluster.name || cluster.uid).filter(Boolean),
+    targetInventory: findingContext.inventory.map(object => ({ uid: object.uid, name: object.name, type: object.type })),
     clusterMemberships: gatewayInventory.clusters.flatMap((cluster) => {
       const clusterName = cluster.name || cluster.NAME || cluster.uid || "";
       const members = [
@@ -7990,6 +8028,7 @@ async function scanHardening(session) {
       "where-used/show-access-rule": gatewayStealthRules.ok ? "ok" : (gatewayStealthRules.error || compactLookupErrors(gatewayStealthRules.errors))
     }
   };
+  assertNotCancelled(operationContext.getStore()?.operation);
   session.lastHardeningScan = result;
   addAuditEntry({
     session,
@@ -8080,6 +8119,7 @@ async function scanMoraHardening(session) {
   };
   const domainResults = [];
   for (let index = 0; index < domains.length; index += 1) {
+    assertNotCancelled(operationContext.getStore()?.operation);
     const domain = domains[index];
     session.scanProgress.currentDomain = domain.name;
     session.scanProgress.currentDomainIndex = index + 1;
@@ -8104,13 +8144,17 @@ async function scanMoraHardening(session) {
       const scan = await scanHardening(domain.session);
       domainResults.push({ name: domain.name, uid: domain.uid, error: "", scan });
     } catch (error) {
+      if (error.code === "SCAN_CANCELLED") throw error;
       domainResults.push({ name: domain.name, uid: domain.uid, error: error.message || "Domain scan failed.", scan: null });
     } finally {
       domain.session.moraProgress = null;
+      domain.session.scanCommandCache = null;
+      domain.session.scanApiQueue = null;
     }
     session.scanProgress.percent = Math.round(((index + 1) / domains.length) * 100);
   }
   const successful = domainResults.filter((domain) => domain.scan);
+  assertNotCancelled(operationContext.getStore()?.operation);
   const failed = domainResults.filter((domain) => !domain.scan);
   const result = {
     moraMode: true,
@@ -8555,7 +8599,13 @@ async function refreshHardeningCheck(session, checkId) {
       phase: "check-refresh-target"
     });
   }
-  const { check, commandResults = {} } = await evaluateSingleHardeningCheck(session, checkId);
+  const { check: evaluated, commandResults = {} } = await evaluateSingleHardeningCheck(session, checkId);
+  const errors = Object.values(commandResults).filter(value => value && typeof value === "object");
+  const check = evaluated ? withFindingIdentity({ ...evaluated,
+    collection: collectionOutcome({ ok: !errors.length, errors, rows: evaluated.evidenceTable?.rows,
+      evidenceTables: evaluated.evidenceTables }) }, {
+    domain: session.domain || "", inventory: session.lastHardeningScan?.targetInventory || []
+  }) : null;
   if (!check) {
     if (session.lastHardeningScan?.checks?.length) {
       session.lastHardeningScan.checks = session.lastHardeningScan.checks.filter((existing) => existing.id !== checkId);
@@ -10149,8 +10199,14 @@ function auditedRouteInfo(route) {
 }
 
 async function handleApi(req, res) {
+  return operationContext.run({ operation: null }, () => handleApiRequest(req, res));
+}
+
+async function handleApiRequest(req, res) {
   const requestId = randomUUID().slice(0, 8);
   let payload = {};
+  let operationSession = null;
+  let operation = null;
   try {
     if (req.url === "/api/health" && req.method === "GET") {
       log("Local API request", { requestId, route: "/api/health" });
@@ -10163,6 +10219,27 @@ async function handleApi(req, res) {
       return;
     }
     payload = await readBody(req);
+    if (req.url === "/api/cancel-scan" && req.method === "POST") {
+      const session = getSession(payload.sessionId);
+      if (session.activeOperation?.kind === "scan") {
+        session.activeOperation.cancelled = true;
+        if (session.scanProgress) session.scanProgress.currentStep = "Cancelling: waiting for active requests to finish";
+      }
+      sendJson(res, 200, { requestId, ok: true });
+      return;
+    }
+    const isOperation = req.method === "POST" && (
+      ["/api/scan", "/api/check", "/api/logout"].includes(req.url) || req.url.startsWith("/api/remediate/")
+    );
+    if (isOperation) {
+      operationSession = getSession(payload.sessionId);
+      operation = beginOperation(operationSession, req.url === "/api/scan" ? "scan" : req.url === "/api/check" ? "check" : "change");
+      operationContext.getStore().operation = operation;
+      if (operation.kind === "check") {
+        operationSession.scanCommandCache = new Map();
+        operationSession.scanApiQueue = createLimiter(operationSession.largeEnvironmentMode ? LARGE_ENV_API_CONCURRENCY : STANDARD_API_CONCURRENCY);
+      }
+    }
     if (req.url === "/api/login" && req.method === "POST") {
       log("Local API request", { requestId, route: "/api/login" });
       sendJson(res, 200, { requestId, ...(await login(payload)) });
@@ -10207,14 +10284,17 @@ async function handleApi(req, res) {
       log("Local API request", { requestId, route: "/api/scan" });
       const session = getSession(payload.sessionId);
       try {
-        sendJson(res, 200, { requestId, ...(session.moraMode ? await scanMoraHardening(session) : await scanHardening(session)) });
+        const result = session.moraMode ? await scanMoraHardening(session) : await scanHardening(session);
+        assertNotCancelled(operation);
+        sendJson(res, 200, { requestId, ...result });
       } catch (error) {
         if (session.scanProgress) {
           session.scanProgress = {
             ...session.scanProgress,
             active: false,
             complete: false,
-            failed: true,
+            failed: error.code !== "SCAN_CANCELLED",
+            cancelled: error.code === "SCAN_CANCELLED",
             percent: Math.max(session.scanProgress.percent || 0, 8),
             currentStep: error.message || "Scan failed",
             completedAt: new Date().toISOString()
@@ -10571,10 +10651,11 @@ async function handleApi(req, res) {
       contentType: error.contentType,
       bodyPreview: error.bodyPreview
     });
-    sendJson(res, 400, {
+    sendJson(res, error.httpStatus || 400, {
       requestId,
       error: error.message,
       sessionExpired: isExpiredSessionError(error),
+      cancelled: error.code === "SCAN_CANCELLED",
       command: error.command,
       phase: error.phase,
       target: error.target,
@@ -10583,6 +10664,14 @@ async function handleApi(req, res) {
       contentType: error.contentType,
       bodyPreview: error.bodyPreview
     });
+  } finally {
+    if (operation) {
+      await finishOperation(operationSession, operation);
+      operationSession.scanCommandCache = null;
+      operationSession.scanApiQueue = null;
+      operationSession.moraGlobalCommandCache = null;
+      operationSession.moraAdminSourceGlobalInventory = null;
+    }
   }
 }
 

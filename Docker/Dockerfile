@@ -14,6 +14,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --chown=pwuser:pwuser server.js ./
+COPY --chown=pwuser:pwuser lib ./lib
 COPY --chown=pwuser:pwuser public ./public
 COPY --chown=pwuser:pwuser scripts ./scripts
 

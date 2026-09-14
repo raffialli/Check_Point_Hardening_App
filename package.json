@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js",
+    "check": "node --check server.js && node --check public/app.js && node --check public/finding-model.js && node --check lib/collection.js && node --check lib/operations.js && node --check scripts/generate_report_pdf.mjs",
+    "test": "node --test tests/*.test.mjs",
     "install:browsers": "playwright install chromium"
   },
   "engines": {

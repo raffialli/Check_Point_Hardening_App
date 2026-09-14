@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { checkOwnerScope, canonicalGatewayName, gatewayIdentityKey as gatewayKey, targetNameFromRow, displayCellValue as cellText, gatewayTargetsForCheck as targetsForCheck, collectionMessage } from "../public/finding-model.js";
 import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
@@ -257,6 +258,7 @@ function renderCheck(check) {
       ${check.change?.changedAt && check.change?.message ? `<p class="change-note">${escapeHtml(check.change.message)} on ${escapeHtml(formatDate(check.change.changedAt))}</p>` : ""}
       <dl class="check-details">
         ${renderDetail("Recommendation", check.recommendation)}
+        ${collectionMessage(check) ? renderDetail("Collection", collectionMessage(check)) : ""}
         ${renderWarning(check.recommendationWarning)}
         ${!evidenceTables.length ? renderDetail("Evidence", check.evidence, { tone: check.evidenceTone }) : ""}
         ${renderDetail("Details", check.details, { critical: check.detailTone === "critical", link: check.detailsLink })}
@@ -280,58 +282,7 @@ function groupChecks(checks) {
   return groups;
 }
 
-function checkOwnerScope(check = {}) {
-  const id = String(check.id || "");
-  if (id === "updates.dynamic-updates" || id === "updates.cpdiag") return "management";
-  if (id.startsWith("policy.") || id === "cve.site-to-site-communities" || id === "advanced.explicit-rules") return "policy";
-  if (id.startsWith("gaia.") || id.startsWith("updates.") || id.startsWith("security-feature-usage.") || id === "cve.legacy-clients") {
-    return id === "gaia.management-external-syslog" ? "management" : "gateway";
-  }
-  return "management";
-}
 
-const GATEWAY_NAME_COLUMNS = ["Gateway", "Name of Gateway", "Gateway Name", "Firewall Name", "Object Name", "Target", "Name"];
-
-function cellText(value) {
-  if (value === undefined || value === null) return "";
-  if (typeof value === "object") return String(value.value ?? value.label ?? "");
-  return String(value);
-}
-
-function canonicalGatewayName(value) {
-  let name = cellText(value).trim();
-  const prefix = /^(?:management\s+(?:server\s+)?name|management|gateway\s+name|gateway|firewall\s+name|firewall|target\s+name|target|object\s+name|object)\s*(?::|-)\s*/i;
-  while (prefix.test(name)) name = name.replace(prefix, "").trim();
-  return name;
-}
-
-function gatewayKey(value) {
-  return canonicalGatewayName(value).replace(/\s+/g, " ").toLowerCase();
-}
-
-function targetNameFromRow(row = {}) {
-  for (const column of GATEWAY_NAME_COLUMNS) {
-    const value = canonicalGatewayName(row[column]);
-    if (value && value !== "N/A" && value !== "Not returned") return value;
-  }
-  return "";
-}
-
-function targetsForCheck(check = {}) {
-  const names = new Map();
-  const remember = (value) => {
-    const name = canonicalGatewayName(value);
-    const key = gatewayKey(name);
-    if (key && !names.has(key)) names.set(key, name);
-  };
-  for (const row of check.evidenceTable?.rows || []) remember(targetNameFromRow(row));
-  for (const table of check.evidenceTables || []) {
-    const rowNames = (table.rows || []).map(targetNameFromRow).filter(Boolean);
-    rowNames.forEach(remember);
-    if (!rowNames.length) remember(table.title);
-  }
-  return [...names.values()];
-}
 
 function rowMatchesTarget(row, target) {
   return gatewayKey(targetNameFromRow(row)) === gatewayKey(target);

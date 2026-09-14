@@ -1,3 +1,4 @@
+import { checkOwnerScope, canonicalGatewayName, gatewayIdentityKey, targetNameFromRow, displayCellValue, gatewayTargetsForCheck, collectionMessage } from "./finding-model.js";
 let sessionId = "";
 let hardeningScan = null;
 const openCheckGroups = new Set();
@@ -29,6 +30,7 @@ const apiKeyField = document.querySelector("#apiKeyField");
 const passwordInput = document.querySelector("#password");
 const apiKeyInput = document.querySelector("#apiKey");
 const scanButton = document.querySelector("#scanButton");
+const cancelScanButton = document.querySelector("#cancelScanButton");
 const exportPdfButton = document.querySelector("#exportPdfButton");
 const exportInfrastructurePdfButton = document.querySelector("#exportInfrastructurePdfButton");
 const logoutButton = document.querySelector("#logoutButton");
@@ -88,6 +90,9 @@ function setBusy(isBusy) {
 }
 
 function setScanInProgress(isScanning) {
+  cancelScanButton.hidden = !isScanning;
+  cancelScanButton.disabled = !isScanning;
+  cancelScanButton.textContent = "Cancel scan";
   scanButton.classList.toggle("is-scanning", isScanning);
   scanButton.innerHTML = isScanning
     ? '<span class="spinner" aria-hidden="true"></span><span>Scanning...</span>'
@@ -1258,6 +1263,7 @@ function renderCheckCardMarkup(check) {
         </div>
       </summary>
       <div class="check-card-body">
+        ${collectionMessage(check) ? `<p class="shared-finding-note">${escapeHtml(collectionMessage(check))}</p>` : ""}
         ${check.hierarchyReference ? `<p class="shared-finding-note"><strong>Related finding.</strong> This setting affects this gateway, but its authoritative evidence and any available action live under ${escapeHtml(check.hierarchyReferenceLocation || "Categories")}.</p>` : ""}
         <dl class="check-details">${renderDetails({
           "Recommendation": check.recommendation,
@@ -1291,72 +1297,7 @@ function renderCheckGroupsMarkup(checks = []) {
   `).join("");
 }
 
-function checkOwnerScope(check = {}) {
-  const id = String(check.id || "");
-  if (id === "updates.dynamic-updates" || id === "updates.cpdiag") {
-    return "management";
-  }
-  if (id.startsWith("policy.") || id === "cve.site-to-site-communities" || id === "advanced.explicit-rules") {
-    return "policy";
-  }
-  if (
-    id.startsWith("gaia.")
-    || id.startsWith("updates.")
-    || id.startsWith("security-feature-usage.")
-    || id === "cve.legacy-clients"
-  ) {
-    return id === "gaia.management-external-syslog" ? "management" : "gateway";
-  }
-  return "management";
-}
 
-const gatewayNameColumns = [
-  "Gateway", "Name of Gateway", "Gateway Name", "Firewall Name", "Object Name", "Target", "Name"
-];
-
-function displayCellValue(value) {
-  if (value === undefined || value === null) return "";
-  if (typeof value === "object") return String(value.value ?? value.label ?? "");
-  return String(value);
-}
-
-function canonicalGatewayName(value) {
-  let name = displayCellValue(value).trim();
-  const labelPrefix = /^(?:management\s+(?:server\s+)?name|management|gateway\s+name|gateway|firewall\s+name|firewall|target\s+name|target|object\s+name|object)\s*(?::|-)\s*/i;
-  while (labelPrefix.test(name)) name = name.replace(labelPrefix, "").trim();
-  return name;
-}
-
-function gatewayIdentityKey(value) {
-  return canonicalGatewayName(value).replace(/\s+/g, " ").toLocaleLowerCase();
-}
-
-function targetNameFromRow(row = {}) {
-  for (const column of gatewayNameColumns) {
-    const value = canonicalGatewayName(row[column]);
-    if (value && value !== "N/A" && value !== "Not returned") return value;
-  }
-  return "";
-}
-
-function gatewayTargetsForCheck(check = {}) {
-  const names = new Map();
-  const remember = (value) => {
-    const name = canonicalGatewayName(value);
-    const key = gatewayIdentityKey(name);
-    if (key && !names.has(key)) names.set(key, name);
-  };
-  for (const row of check.evidenceTable?.rows || []) {
-    const name = targetNameFromRow(row);
-    if (name) remember(name);
-  }
-  for (const table of check.evidenceTables || []) {
-    const rowNames = (table.rows || []).map(targetNameFromRow).filter(Boolean);
-    rowNames.forEach(remember);
-    if (!rowNames.length && table.title) remember(table.title);
-  }
-  return [...names.values()].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-}
 
 function rowMatchesTarget(row, targetName) {
   return gatewayIdentityKey(targetNameFromRow(row)) === gatewayIdentityKey(targetName);
@@ -2588,6 +2529,17 @@ reauthForm.addEventListener("submit", async (event) => {
   }
 });
 
+cancelScanButton.addEventListener("click", async () => {
+  cancelScanButton.disabled = true;
+  cancelScanButton.textContent = "Cancelling...";
+  try {
+    await api("/api/cancel-scan", { sessionId });
+  } catch (error) {
+    addNotice(error.message, "error");
+    cancelScanButton.disabled = false;
+  }
+});
+
 scanButton.addEventListener("click", async () => {
   setBusy(true);
   setScanInProgress(true);
@@ -2602,7 +2554,7 @@ scanButton.addEventListener("click", async () => {
     stopScanProgressPolling();
     addNotice(error.message, "error");
     scanStatus.className = "global-status error-state";
-    scanStatus.textContent = `Scan failed: ${error.message}`;
+    scanStatus.textContent = error.details?.cancelled ? error.message : `Scan failed: ${error.message}`;
   } finally {
     setScanInProgress(false);
     setBusy(false);
