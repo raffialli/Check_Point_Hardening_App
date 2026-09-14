@@ -3,6 +3,8 @@ let hardeningScan = null;
 const openCheckGroups = new Set();
 const openCheckItems = new Set();
 const openMoraDomains = new Set();
+const openHierarchyNodes = new Set(["management", "policy", "gateways"]);
+let resultsView = "hierarchy";
 const KONAMI_SEQUENCE = ["ArrowUp", "ArrowUp", "ArrowDown", "ArrowDown", "ArrowLeft", "ArrowRight", "ArrowLeft", "ArrowRight", "b", "a"];
 let konamiPosition = 0;
 let moraModeEnabled = false;
@@ -28,8 +30,11 @@ const passwordInput = document.querySelector("#password");
 const apiKeyInput = document.querySelector("#apiKey");
 const scanButton = document.querySelector("#scanButton");
 const exportPdfButton = document.querySelector("#exportPdfButton");
+const exportInfrastructurePdfButton = document.querySelector("#exportInfrastructurePdfButton");
 const logoutButton = document.querySelector("#logoutButton");
 const checksList = document.querySelector("#checksList");
+const hierarchyViewButton = document.querySelector("#hierarchyViewButton");
+const categoryViewButton = document.querySelector("#categoryViewButton");
 const scanStatus = document.querySelector("#scanStatus");
 const guideSummary = document.querySelector("#guideSummary");
 const summaryGrid = document.querySelector("#summaryGrid");
@@ -679,6 +684,21 @@ function groupChecks(checks = []) {
   return [...groups.entries()];
 }
 
+function infrastructureCategoryOrder(check = {}) {
+  const category = check.category || "";
+  if (category === "Administrator Identity and Access Control") return 10;
+  if (category === "Review Implied Rules") return 20;
+  if (category === "Decreasing Security Gateway Exposure with Policy") return 10;
+  if (category === "Updates, Health, and Ongoing Protection") return 20;
+  return 50;
+}
+
+function orderInfrastructureChecks(checks = []) {
+  return checks.map((check, index) => ({ check, index })).sort((a, b) => (
+    infrastructureCategoryOrder(a.check) - infrastructureCategoryOrder(b.check) || a.index - b.index
+  )).map(({ check }) => check);
+}
+
 function countStatuses(checks = []) {
   return checks.reduce((counts, check) => {
     counts[check.status] = (counts[check.status] || 0) + 1;
@@ -1219,6 +1239,43 @@ function downloadDebugLog() {
   addNotice("Debug log downloaded.", "success");
 }
 
+function renderCheckCardMarkup(check) {
+  return `
+    <details class="check-card" data-check-id="${escapeHtml(check.id)}" ${openCheckItems.has(check.id) ? "open" : ""}>
+      <summary class="check-card-summary">
+        <div class="check-card-head">
+          <div class="check-card-title-wrap">
+            <h4>${escapeHtml(check.title)}</h4>
+            ${renderReviewSummary(check)}
+            ${renderChangeSummary(check)}
+          </div>
+          ${check.hideBadges ? "" : `
+            <div class="badge-stack">
+              <span class="badge ${escapeHtml(check.status)}">${escapeHtml(statusLabel(check.status))}</span>
+              <span class="badge severity-${escapeHtml(check.severity || "medium")}">${escapeHtml(severityLabel(check.severity))}</span>
+            </div>
+          `}
+        </div>
+      </summary>
+      <div class="check-card-body">
+        ${check.hierarchyReference ? `<p class="shared-finding-note"><strong>Related finding.</strong> This setting affects this gateway, but its authoritative evidence and any available action live under ${escapeHtml(check.hierarchyReferenceLocation || "Categories")}.</p>` : ""}
+        <dl class="check-details">${renderDetails({
+          "Recommendation": check.recommendation,
+          ...(check.evidenceTable || check.evidenceTables ? {} : { "Evidence": check.evidence }),
+          "Details": check.details
+        }, { evidenceTone: check.evidenceTone, detailTone: check.detailTone, detailLink: check.detailsLink, detailWarning: check.detailsWarning, recommendationWarning: check.recommendationWarning })}
+        ${renderDetailRows(check.detailRows)}
+        ${renderSpecialConsiderations(check.specialConsiderations)}
+        ${renderDetails({ "Guide section": check.source })}</dl>
+        ${renderEvidenceTable(check.evidenceTable, check.id)}
+        ${renderEvidenceTables(check.evidenceTables, check.id)}
+        ${renderRemediation(check)}
+        ${renderCheckActions(check)}
+      </div>
+    </details>
+  `;
+}
+
 function renderCheckGroupsMarkup(checks = []) {
   return groupChecks(checks).map(([category, categoryChecks]) => `
     <details class="check-group" data-category="${escapeHtml(category)}" ${openCheckGroups.has(category) ? "open" : ""}>
@@ -1228,42 +1285,330 @@ function renderCheckGroupsMarkup(checks = []) {
         <span class="check-group-badges">${renderGroupBadges(categoryChecks)}</span>
       </summary>
       <div class="check-cards">
-        ${categoryChecks.map((check) => `
-          <details class="check-card" data-check-id="${escapeHtml(check.id)}" ${openCheckItems.has(check.id) ? "open" : ""}>
-            <summary class="check-card-summary">
-              <div class="check-card-head">
-                <div class="check-card-title-wrap">
-                  <h4>${escapeHtml(check.title)}</h4>
-                  ${renderReviewSummary(check)}
-                  ${renderChangeSummary(check)}
-                </div>
-                ${check.hideBadges ? "" : `
-                  <div class="badge-stack">
-                    <span class="badge ${escapeHtml(check.status)}">${escapeHtml(statusLabel(check.status))}</span>
-                    <span class="badge severity-${escapeHtml(check.severity || "medium")}">${escapeHtml(severityLabel(check.severity))}</span>
-                  </div>
-                `}
-              </div>
-            </summary>
-            <div class="check-card-body">
-              <dl class="check-details">${renderDetails({
-                "Recommendation": check.recommendation,
-                ...(check.evidenceTable || check.evidenceTables ? {} : { "Evidence": check.evidence }),
-                "Details": check.details
-              }, { evidenceTone: check.evidenceTone, detailTone: check.detailTone, detailLink: check.detailsLink, detailWarning: check.detailsWarning, recommendationWarning: check.recommendationWarning })}
-              ${renderDetailRows(check.detailRows)}
-              ${renderSpecialConsiderations(check.specialConsiderations)}
-              ${renderDetails({ "Guide section": check.source })}</dl>
-              ${renderEvidenceTable(check.evidenceTable, check.id)}
-              ${renderEvidenceTables(check.evidenceTables, check.id)}
-              ${renderRemediation(check)}
-              ${renderCheckActions(check)}
-            </div>
-          </details>
-        `).join("")}
+        ${categoryChecks.map(renderCheckCardMarkup).join("")}
       </div>
     </details>
   `).join("");
+}
+
+function checkOwnerScope(check = {}) {
+  const id = String(check.id || "");
+  if (id === "updates.dynamic-updates" || id === "updates.cpdiag") {
+    return "management";
+  }
+  if (id.startsWith("policy.") || id === "cve.site-to-site-communities" || id === "advanced.explicit-rules") {
+    return "policy";
+  }
+  if (
+    id.startsWith("gaia.")
+    || id.startsWith("updates.")
+    || id.startsWith("security-feature-usage.")
+    || id === "cve.legacy-clients"
+  ) {
+    return id === "gaia.management-external-syslog" ? "management" : "gateway";
+  }
+  return "management";
+}
+
+const gatewayNameColumns = [
+  "Gateway", "Name of Gateway", "Gateway Name", "Firewall Name", "Object Name", "Target", "Name"
+];
+
+function displayCellValue(value) {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "object") return String(value.value ?? value.label ?? "");
+  return String(value);
+}
+
+function canonicalGatewayName(value) {
+  let name = displayCellValue(value).trim();
+  const labelPrefix = /^(?:management\s+(?:server\s+)?name|management|gateway\s+name|gateway|firewall\s+name|firewall|target\s+name|target|object\s+name|object)\s*(?::|-)\s*/i;
+  while (labelPrefix.test(name)) name = name.replace(labelPrefix, "").trim();
+  return name;
+}
+
+function gatewayIdentityKey(value) {
+  return canonicalGatewayName(value).replace(/\s+/g, " ").toLocaleLowerCase();
+}
+
+function targetNameFromRow(row = {}) {
+  for (const column of gatewayNameColumns) {
+    const value = canonicalGatewayName(row[column]);
+    if (value && value !== "N/A" && value !== "Not returned") return value;
+  }
+  return "";
+}
+
+function gatewayTargetsForCheck(check = {}) {
+  const names = new Map();
+  const remember = (value) => {
+    const name = canonicalGatewayName(value);
+    const key = gatewayIdentityKey(name);
+    if (key && !names.has(key)) names.set(key, name);
+  };
+  for (const row of check.evidenceTable?.rows || []) {
+    const name = targetNameFromRow(row);
+    if (name) remember(name);
+  }
+  for (const table of check.evidenceTables || []) {
+    const rowNames = (table.rows || []).map(targetNameFromRow).filter(Boolean);
+    rowNames.forEach(remember);
+    if (!rowNames.length && table.title) remember(table.title);
+  }
+  return [...names.values()].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+}
+
+function rowMatchesTarget(row, targetName) {
+  return gatewayIdentityKey(targetNameFromRow(row)) === gatewayIdentityKey(targetName);
+}
+
+function readOnlyEvidenceRow(row = {}) {
+  const { _select, _remediation, _remediationColumn, ...visible } = row;
+  return visible;
+}
+
+function textMentionsGateway(value, targetName) {
+  const targetKey = gatewayIdentityKey(targetName);
+  if (!targetKey) return false;
+  const normalizedText = String(value || "")
+    .replace(/^(?:management\s+(?:server\s+)?name|management|gateway\s+name|gateway|firewall\s+name|firewall|target\s+name|target|object\s+name|object)\s*(?::|-)\s*/i, "")
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase();
+  return normalizedText.includes(targetKey);
+}
+
+function detailRowsForGateway(detailRows = [], targetName) {
+  return detailRows.filter((row) => (
+    textMentionsGateway(row.text, targetName)
+    || (row.bold || []).some((value) => textMentionsGateway(value, targetName))
+  ));
+}
+
+function evidenceRowsForGateway(check, targetName) {
+  return [
+    ...(check.evidenceTable?.rows || []).filter((row) => rowMatchesTarget(row, targetName)),
+    ...(check.evidenceTables || []).flatMap((table) => {
+      const tableIsTarget = gatewayIdentityKey(table.title || "") === gatewayIdentityKey(targetName);
+      return tableIsTarget ? (table.rows || []) : (table.rows || []).filter((row) => rowMatchesTarget(row, targetName));
+    })
+  ];
+}
+
+function rowPlainText(row = {}) {
+  return Object.entries(row)
+    .filter(([key]) => !key.startsWith("_"))
+    .map(([, value]) => displayCellValue(value))
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase();
+}
+
+function sharedCheckHasFindingForGateway(check, targetName) {
+  const targetDetails = detailRowsForGateway(check.detailRows || [], targetName);
+  if (targetDetails.some((row) => row.tone === "critical" || (row.bold || []).length)) return true;
+  const rows = evidenceRowsForGateway(check, targetName);
+  if (rows.some((row) => row._select || row._remediation || Object.values(row).some((value) => value?.tone === "critical"))) return true;
+  if (check.id === "policy.stealth-rule") {
+    return rows.some((row) => /\bmissing\b|no exact match|does not have/.test(rowPlainText(row)));
+  }
+  if (check.id === "gaia.allowed-host-access") {
+    return rows.some((row) => /\banyhost\b|\bany host\b|\btype any\b|\bany ip\b/.test(rowPlainText(row)));
+  }
+  if (check.id === "updates.jumbo-hotfix") {
+    return rows.some((row) => String(row["Available Recommended Update"] || "").toLocaleLowerCase() === "yes");
+  }
+  return ["remediation-required", "remediation-recommended"].includes(check.status) && rows.length > 0;
+}
+
+function isGatewayFinding(check) {
+  return !["pass", "informational", "reviewed"].includes(check.status);
+}
+
+function hasTargetScopedGatewayAction(check) {
+  return ["gaia.allowed-host-access", "gaia.system-logging-management", "cve.legacy-clients"].includes(check.id);
+}
+
+function checkForGateway(check, targetName, affectedTargetCount, { forceReference = false, referenceLocation = "Shared gateway controls" } = {}) {
+  const targetScoped = forceReference || affectedTargetCount > 1;
+  const readOnlyReference = forceReference || (affectedTargetCount > 1 && !hasTargetScopedGatewayAction(check));
+  const evidenceTable = check.evidenceTable?.rows?.some((row) => rowMatchesTarget(row, targetName))
+    ? {
+      ...check.evidenceTable,
+      selectable: readOnlyReference ? false : check.evidenceTable.selectable,
+      rows: check.evidenceTable.rows
+        .filter((row) => rowMatchesTarget(row, targetName))
+        .map((row) => readOnlyReference ? readOnlyEvidenceRow(row) : row)
+    }
+    : null;
+  const evidenceTables = (check.evidenceTables || []).filter((table) => (
+    gatewayIdentityKey(table.title || "") === gatewayIdentityKey(targetName)
+    || (table.rows || []).some((row) => rowMatchesTarget(row, targetName))
+  )).map((table) => {
+    const matchingRows = (table.rows || []).filter((row) => rowMatchesTarget(row, targetName));
+    const tableIsTarget = gatewayIdentityKey(table.title || "") === gatewayIdentityKey(targetName);
+    const rows = (matchingRows.length && !tableIsTarget ? matchingRows : (table.rows || []))
+      .map((row) => readOnlyReference ? readOnlyEvidenceRow(row) : row);
+    return { ...table, selectable: readOnlyReference ? false : table.selectable, rows };
+  });
+  const targetDetailRows = targetScoped ? detailRowsForGateway(check.detailRows || [], targetName) : check.detailRows;
+  return {
+    ...check,
+    hierarchyReference: readOnlyReference,
+    hierarchyReferenceLocation: readOnlyReference ? referenceLocation : "",
+    evidence: targetScoped
+      ? `Showing only evidence and findings associated with ${canonicalGatewayName(targetName)}.`
+      : check.evidence,
+    evidenceTable,
+    evidenceTables: evidenceTables.length ? evidenceTables : null,
+    detailRows: targetDetailRows?.length ? targetDetailRows : null,
+    recommendationWarning: targetScoped ? "" : check.recommendationWarning,
+    detailsWarning: targetScoped ? "" : check.detailsWarning,
+    remediation: readOnlyReference ? null : check.remediation,
+    review: readOnlyReference ? null : check.review
+  };
+}
+
+function hierarchySummary(checks) {
+  const counts = countStatuses(checks);
+  const action = Number(counts["remediation-required"] || 0) + Number(counts["remediation-recommended"] || 0);
+  const review = Number(counts["needs-review"] || 0) + Number(counts["remediation-review-recommended"] || 0);
+  return `<span class="hierarchy-count">${checks.length} checks</span>${action ? `<span class="badge remediation-required">${action} action</span>` : ""}${review ? `<span class="badge needs-review">${review} review</span>` : ""}`;
+}
+
+function renderHierarchyNode({ key, title, description, checks, content = "", open = false, kind = "" }) {
+  return `
+    <details class="hierarchy-node ${escapeHtml(kind)}" data-hierarchy-key="${escapeHtml(key)}" ${openHierarchyNodes.has(key) || open ? "open" : ""}>
+      <summary class="hierarchy-summary">
+        <span class="hierarchy-icon" aria-hidden="true"></span>
+        <span class="hierarchy-heading"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(description)}</small></span>
+        <span class="hierarchy-meta">${hierarchySummary(checks)}</span>
+      </summary>
+      <div class="hierarchy-content">${content || renderCheckGroupsMarkup(checks)}</div>
+    </details>
+  `;
+}
+
+function isManagementObjectCheck(check = {}) {
+  return check.category === "Management Plane Protection" || check.id === "gaia.management-external-syslog";
+}
+
+function managementObjectDisplayName(checks = []) {
+  if (hardeningScan?.managementObjectName) return hardeningScan.managementObjectName;
+  for (const check of checks) {
+    for (const row of check.evidenceTable?.rows || []) {
+      const name = displayCellValue(row["Management Server Name"] || row["Management Name"] || row["Management Object"] || "").trim();
+      if (name && name !== "N/A" && name !== "Not returned") return name;
+    }
+    for (const table of check.evidenceTables || []) {
+      const name = canonicalGatewayName(table.title || "");
+      if (/^management/i.test(String(table.title || "")) && name) return name;
+    }
+  }
+  return hardeningScan?.reportDomainName || "Management server";
+}
+
+function infrastructureGatewayTargets(checks = [], managementObjectName = "") {
+  const targets = new Map();
+  const remember = (value) => {
+    const name = canonicalGatewayName(value);
+    const key = gatewayIdentityKey(name);
+    if (key && key !== gatewayIdentityKey(managementObjectName) && !targets.has(key)) targets.set(key, name);
+  };
+  (hardeningScan?.gatewayTargets || []).forEach(remember);
+  checks.forEach((check) => gatewayTargetsForCheck(check).forEach(remember));
+  return [...targets.values()].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+}
+
+function infrastructureGatewayLabel(targetName) {
+  const name = canonicalGatewayName(targetName);
+  const key = gatewayIdentityKey(name);
+  const clusterKeys = new Set((hardeningScan?.clusterTargets || []).map(gatewayIdentityKey).filter(Boolean));
+  if (clusterKeys.has(key)) return `${name} (Cluster Object)`;
+  const membership = (hardeningScan?.clusterMemberships || []).find((item) => gatewayIdentityKey(item.memberName) === key);
+  return membership?.clusterName ? `${name} (cluster member of: ${canonicalGatewayName(membership.clusterName)})` : name;
+}
+
+function renderInfrastructureHierarchy(checks = [], contextKey = "environment") {
+  const managementOwnedChecks = checks.filter((check) => checkOwnerScope(check) === "management");
+  const policyChecks = checks.filter((check) => checkOwnerScope(check) === "policy");
+  const gatewayChecks = checks.filter((check) => checkOwnerScope(check) === "gateway");
+  const managementObjectChecks = managementOwnedChecks.filter(isManagementObjectCheck);
+  const managementObjectName = managementObjectDisplayName([...managementObjectChecks, ...gatewayChecks]);
+  const managementObjectKey = gatewayIdentityKey(managementObjectName);
+  const logicalClusterKeys = new Set((hardeningScan?.clusterTargets || []).map(gatewayIdentityKey).filter(Boolean));
+  const knownGatewayTargets = infrastructureGatewayTargets(gatewayChecks, managementObjectName);
+  const managementChecks = [
+    ...managementOwnedChecks.filter((check) => !isManagementObjectCheck(check)),
+    ...policyChecks.filter((check) => !["policy.stealth-rule", "policy.gateway-object-status"].includes(check.id))
+      .map((check) => check.id === "policy.implied-rules" ? { ...check, category: "Review Implied Rules" } : check)
+  ];
+  const orderedManagementChecks = orderInfrastructureChecks(managementChecks);
+  const gatewayObjectStatusChecks = policyChecks
+    .filter((check) => check.id === "policy.gateway-object-status")
+    .map((check) => ({ ...check, category: "Gateway Object SIC Status" }));
+  const gatewayImpactPolicyChecks = policyChecks.filter((check) => check.id === "policy.stealth-rule");
+  const byTarget = new Map();
+  for (const check of gatewayChecks) {
+    const checkTargets = gatewayTargetsForCheck(check);
+    const targets = checkTargets.length ? checkTargets : knownGatewayTargets;
+    if (!targets.length) continue;
+    for (const target of targets) {
+      const targetKey = gatewayIdentityKey(target);
+      // Logical cluster objects only own policy-level stealth-rule findings.
+      // Appliance checks belong to standalone gateways or physical members.
+      if (logicalClusterKeys.has(targetKey)) continue;
+      if (managementObjectKey && targetKey === managementObjectKey) {
+        managementObjectChecks.push(checkForGateway(check, target, targets.length, { referenceLocation: "Categories" }));
+        continue;
+      }
+      if (!byTarget.has(targetKey)) byTarget.set(targetKey, { name: canonicalGatewayName(target), checks: [] });
+      byTarget.get(targetKey).checks.push(checkForGateway(check, target, targets.length, { referenceLocation: "Categories" }));
+    }
+  }
+  for (const check of gatewayImpactPolicyChecks) {
+    const targets = gatewayTargetsForCheck(check);
+    for (const target of targets) {
+      if (!sharedCheckHasFindingForGateway(check, target)) continue;
+      const targetKey = gatewayIdentityKey(target);
+      if (!byTarget.has(targetKey)) byTarget.set(targetKey, { name: canonicalGatewayName(target), checks: [] });
+      byTarget.get(targetKey).checks.push(checkForGateway(check, target, targets.length, { forceReference: true, referenceLocation: "Policy packages" }));
+    }
+  }
+  const targetNodes = [...byTarget.values()]
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+    .map(({ name: target, checks: targetChecks }, index) => renderHierarchyNode({
+    key: `${contextKey}:gateway:${target}`,
+    title: infrastructureGatewayLabel(target),
+    description: "All checks and target-specific evidence for this gateway or cluster",
+    checks: orderInfrastructureChecks(targetChecks),
+    open: index === 0,
+    kind: "gateway-node"
+  })).join("");
+  const gatewayStatusContent = gatewayObjectStatusChecks.length ? renderCheckGroupsMarkup(gatewayObjectStatusChecks) : "";
+  const gatewayContent = `${gatewayStatusContent}${targetNodes || `<p class="hierarchy-empty">No gateway-owned checks were returned.</p>`}`;
+  const managementObjectNode = managementObjectChecks.length ? renderHierarchyNode({
+    key: `${contextKey}:management-object:${managementObjectName}`,
+    title: managementObjectName,
+    description: "Management Plane Protection and management-server Gaia OS hardening",
+    checks: managementObjectChecks,
+    open: true,
+    kind: "management-object-node"
+  }) : "";
+  const managementContent = `${renderCheckGroupsMarkup(orderedManagementChecks)}${managementObjectNode}`;
+  return `
+    <div class="infrastructure-tree">
+      ${renderHierarchyNode({ key: `${contextKey}:management`, title: "Policy and Management", description: "Administrators, authentication, global settings, policy controls, and the management server", checks: [...orderedManagementChecks, ...managementObjectChecks], content: managementContent, open: true, kind: "management-node" })}
+      ${renderHierarchyNode({ key: `${contextKey}:gateways`, title: "Gateways and clusters", description: "All gateway checks plus policy findings affecting individual gateways, members, or clusters", checks: [...gatewayObjectStatusChecks, ...gatewayChecks, ...gatewayImpactPolicyChecks], content: gatewayContent, open: true, kind: "gateways-node" })}
+    </div>
+  `;
+}
+
+function updateResultViewButtons() {
+  const hierarchyActive = resultsView === "hierarchy";
+  hierarchyViewButton.classList.toggle("active", hierarchyActive);
+  categoryViewButton.classList.toggle("active", !hierarchyActive);
+  hierarchyViewButton.setAttribute("aria-pressed", String(hierarchyActive));
+  categoryViewButton.setAttribute("aria-pressed", String(!hierarchyActive));
 }
 
 function renderChecks() {
@@ -1274,10 +1619,12 @@ function renderChecks() {
     commandPanel.classList.add("hidden");
     downloadDebugLogButton.disabled = true;
     exportPdfButton.disabled = true;
+    exportInfrastructurePdfButton.disabled = true;
     renderSummary({});
     return;
   }
   exportPdfButton.disabled = false;
+  exportInfrastructurePdfButton.disabled = false;
   downloadDebugLogButton.disabled = false;
 
   const moraDomains = hardeningScan.moraMode && Array.isArray(hardeningScan.domains) ? hardeningScan.domains : [];
@@ -1321,11 +1668,13 @@ function renderChecks() {
           <span>${domain.scan ? `${domain.scan.checks?.length || 0} checks` : "Scan failed"}</span>
         </summary>
         <div class="mora-domain-content">
-          ${domain.scan ? renderCheckGroupsMarkup(domain.scan.checks || []) : `<p class="mora-domain-error">${escapeHtml(domain.error || "This domain could not be scanned.")}</p>`}
+          ${domain.scan ? (resultsView === "hierarchy" ? renderInfrastructureHierarchy(domain.scan.checks || [], `domain:${domain.uid || domain.name}`) : renderCheckGroupsMarkup(domain.scan.checks || [])) : `<p class="mora-domain-error">${escapeHtml(domain.error || "This domain could not be scanned.")}</p>`}
         </div>
       </details>
     `).join("")
-    : renderCheckGroupsMarkup(checks);
+    : (resultsView === "hierarchy" ? renderInfrastructureHierarchy(checks) : renderCheckGroupsMarkup(checks));
+
+  updateResultViewButtons();
 
   const results = hardeningScan.commandResults || {};
   const commandLog = hardeningScan.commandLog || [];
@@ -1393,6 +1742,14 @@ function renderChecks() {
       }
     });
   });
+  document.querySelectorAll(".hierarchy-node").forEach((node) => {
+    node.addEventListener("toggle", () => {
+      const key = node.dataset.hierarchyKey;
+      if (!key) return;
+      if (node.open) openHierarchyNodes.add(key);
+      else openHierarchyNodes.delete(key);
+    });
+  });
   document.querySelectorAll(".check-card").forEach((card) => {
     card.addEventListener("toggle", () => {
       const checkId = card.dataset.checkId;
@@ -1405,6 +1762,16 @@ function renderChecks() {
     });
   });
 }
+
+hierarchyViewButton.addEventListener("click", () => {
+  resultsView = "hierarchy";
+  renderChecks();
+});
+
+categoryViewButton.addEventListener("click", () => {
+  resultsView = "categories";
+  renderChecks();
+});
 
 function handleEvidenceTargetSelectAll(event) {
   const checkId = event.currentTarget.dataset.checkId;
@@ -1474,19 +1841,20 @@ function restoreChecksPrint() {
   printRestoreOpenItems = null;
 }
 
-async function exportHardeningChecksPdf() {
+async function exportHardeningChecksPdf(reportLayout = "category", exportButton = exportPdfButton) {
   if (!hardeningScan) {
     addNotice("Run a scan before exporting a PDF report.", "error");
     return;
   }
   exportPdfButton.disabled = true;
-  const originalText = exportPdfButton.textContent;
-  exportPdfButton.textContent = "Building PDF...";
+  exportInfrastructurePdfButton.disabled = true;
+  const originalText = exportButton.textContent;
+  exportButton.textContent = "Building PDF...";
   try {
     const response = await fetch("/api/export-pdf", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ sessionId })
+      body: JSON.stringify({ sessionId, reportLayout })
     });
     if (!response.ok) {
       let message = "PDF export failed.";
@@ -1506,22 +1874,23 @@ async function exportHardeningChecksPdf() {
     const customerPrefix = customerPart ? `${customerPart}-` : "";
     const domainPart = safeDownloadFilenamePart(hardeningScan.reportDomainName);
     link.download = hardeningScan.moraMode
-      ? `${customerPrefix}all-domain-hardening-reports.zip`
+      ? `${customerPrefix}all-domain-${reportLayout}-hardening-reports.zip`
       : (domainPart
-        ? `${customerPrefix}${domainPart}-hardening-report.pdf`
-        : `${customerPrefix}check-point-best-practices-hardening-report.pdf`);
+        ? `${customerPrefix}${domainPart}-${reportLayout}-hardening-report.pdf`
+        : `${customerPrefix}check-point-best-practices-${reportLayout}-hardening-report.pdf`);
     document.body.append(link);
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
     addNotice(hardeningScan.moraMode
-      ? "Separate domain PDF reports exported in one ZIP file."
-      : "PDF report exported with cover and intro.", "success");
+      ? `Separate domain ${reportLayout} PDF reports exported in one ZIP file.`
+      : `${reportLayout === "infrastructure" ? "Infrastructure" : "Category"} PDF report exported with cover and intro.`, "success");
   } catch (error) {
     addNotice(`PDF export failed: ${error.message}`, "error");
   } finally {
-    exportPdfButton.textContent = originalText;
+    exportButton.textContent = originalText;
     exportPdfButton.disabled = false;
+    exportInfrastructurePdfButton.disabled = false;
   }
 }
 
@@ -2240,7 +2609,8 @@ scanButton.addEventListener("click", async () => {
   }
 });
 
-exportPdfButton.addEventListener("click", exportHardeningChecksPdf);
+exportPdfButton.addEventListener("click", () => exportHardeningChecksPdf("category", exportPdfButton));
+exportInfrastructurePdfButton.addEventListener("click", () => exportHardeningChecksPdf("infrastructure", exportInfrastructurePdfButton));
 downloadDebugLogButton.addEventListener("click", downloadDebugLog);
 window.addEventListener("afterprint", restoreChecksPrint);
 
@@ -2253,6 +2623,7 @@ logoutButton.addEventListener("click", async () => {
   } finally {
     sessionId = "";
     hardeningScan = null;
+    scanButton.textContent = "Scan Hardening Posture";
     openCheckGroups.clear();
     openMoraDomains.clear();
     connectionLabel.textContent = "Not connected";

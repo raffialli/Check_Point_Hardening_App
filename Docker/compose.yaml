@@ -1,15 +1,17 @@
+name: check-point-hardening-v2
+
 services:
   scanner:
     build:
       context: ..
       dockerfile: Docker/Dockerfile
-    image: check-point-hardening-app-single-use-public-edition:latest
-    container_name: check-point-hardening-app-single-use-public-edition
+    image: check-point-hardening-app:v2-dev
+    container_name: check-point-hardening-v2
     init: true
     restart: unless-stopped
     shm_size: "1gb"
     ports:
-      - "3100:3100"
+      - "127.0.0.1:${V2_HOST_PORT:-3200}:3100"
     environment:
       HOST: "0.0.0.0"
       PORT: "3100"

@@ -5,6 +5,11 @@ node_modules
 npm-debug.log*
 output
 dist
+customer-data
+engagements
+reports
+exports
+screenshots
 *.log
 *.tmp
 check-point-debug-log-*.json

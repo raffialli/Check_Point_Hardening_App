@@ -177,7 +177,7 @@ function runProcess(command, args, options = {}) {
   });
 }
 
-async function generateHardeningReportPdfFromScan(scan) {
+async function generateHardeningReportPdfFromScan(scan, reportLayout = "category") {
   if (!scan?.checks?.length) {
     throw enrichError(new Error("Run a scan before exporting a PDF report."), {
       phase: "report-scan"
@@ -192,7 +192,7 @@ async function generateHardeningReportPdfFromScan(scan) {
   const scanPath = join(workingDir, "scan.json");
   const outputPath = join(workingDir, "hardening-report.pdf");
   try {
-    await writeFile(scanPath, JSON.stringify(scan), "utf8");
+    await writeFile(scanPath, JSON.stringify({ ...scan, reportLayout: reportLayout === "infrastructure" ? "infrastructure" : "category" }), "utf8");
     await runProcess(REPORT_NODE, [
       REPORT_GENERATOR,
       "--scan-json",
@@ -215,8 +215,8 @@ async function generateHardeningReportPdfFromScan(scan) {
   }
 }
 
-async function generateHardeningReportPdf(session) {
-  return generateHardeningReportPdfFromScan(session.lastHardeningScan);
+async function generateHardeningReportPdf(session, reportLayout = "category") {
+  return generateHardeningReportPdfFromScan(session.lastHardeningScan, reportLayout);
 }
 
 function safeReportFilename(value) {
@@ -231,15 +231,16 @@ function customerReportPrefix(value) {
   return String(value || "").trim() ? `${safeReportFilename(value)}-` : "";
 }
 
-function singleReportFilename(scan = {}) {
+function singleReportFilename(scan = {}, reportLayout = "category") {
   const customerPrefix = customerReportPrefix(scan.customerName);
   const domainName = String(scan.reportDomainName || "").trim();
+  const layoutSuffix = reportLayout === "infrastructure" ? "infrastructure" : "category";
   return domainName
-    ? `${customerPrefix}${safeReportFilename(domainName)}-hardening-report.pdf`
-    : `${customerPrefix}check-point-best-practices-hardening-report.pdf`;
+    ? `${customerPrefix}${safeReportFilename(domainName)}-${layoutSuffix}-hardening-report.pdf`
+    : `${customerPrefix}check-point-best-practices-${layoutSuffix}-hardening-report.pdf`;
 }
 
-async function generateMoraDomainReportsZip(session) {
+async function generateMoraDomainReportsZip(session, reportLayout = "category") {
   const scan = session.lastHardeningScan;
   const domains = Array.isArray(scan?.domains) ? scan.domains.filter((domain) => domain.scan?.checks?.length) : [];
   if (!scan?.moraMode || !domains.length) {
@@ -253,9 +254,9 @@ async function generateMoraDomainReportsZip(session) {
     const report = await generateHardeningReportPdfFromScan({
       ...domain.scan,
       reportDomainName: domain.name
-    });
+    }, reportLayout);
     try {
-      zip.file(`${customerPrefix}${safeReportFilename(domain.name)}-hardening-report.pdf`, report.file);
+      zip.file(singleReportFilename({ ...domain.scan, customerName: scan.customerName, reportDomainName: domain.name }, reportLayout), report.file);
     } finally {
       await report.cleanup();
     }
@@ -519,7 +520,7 @@ function cpRequestUnqueued(session, command, body = {}) {
     const timeoutMs = command === "test-sic-status"
       ? CP_SIC_TEST_TIMEOUT_MS
       : command === "show-logs"
-        ? CP_LOG_API_TIMEOUT_MS
+      ? CP_LOG_API_TIMEOUT_MS
       : (command === "show-vpn-communities-star" || command === "show-vpn-communities-meshed"
           ? CP_VPN_API_TIMEOUT_MS
           : CP_API_TIMEOUT_MS);
@@ -2141,7 +2142,8 @@ async function collectGatewaySicStatusEvidence(session, gatewayInventory) {
       status,
       communicating,
       message: test.ok ? String(test.data?.["sic-message"] || "") : String(test.error?.error || "test-sic-status failed"),
-      sicName: test.ok ? String(test.data?.["sic-name"] || "") : ""
+      sicName: test.ok ? String(test.data?.["sic-name"] || "") : "",
+      error: test.ok ? null : test.error
     };
   })));
 
@@ -5311,9 +5313,7 @@ async function collectAdministrativeSourceIpEvidence(session, gatewaysAndServers
     const cacheOwner = session.moraRootSession;
     const scanToken = session.moraProgress?.parent?.scanProgress?.startedAt || "";
     if (cacheOwner && scanToken) {
-      if (cacheOwner.moraAdminSourceGlobalInventory?.scanToken !== scanToken) {
-        cacheOwner.moraAdminSourceGlobalInventory = { scanToken, promise: loadMdsGlobalInventory() };
-      }
+      if (cacheOwner.moraAdminSourceGlobalInventory?.scanToken !== scanToken) cacheOwner.moraAdminSourceGlobalInventory = { scanToken, promise: loadMdsGlobalInventory() };
       mdsGlobalInventory = await cacheOwner.moraAdminSourceGlobalInventory.promise;
     } else {
       mdsGlobalInventory = await loadMdsGlobalInventory();
@@ -5351,25 +5351,14 @@ async function collectAdministrativeSourceIpEvidence(session, gatewaysAndServers
     addManagementTarget(localManagement.matched ? localManagement : resolveDomainManagementFromMdss(globalMdsServers, domainIdentity), "Domain management host");
   }
   const domainTarget = managementTargets.find((target) => target.role === "Domain management host");
-  const domainIdentityTokens = new Set([
-    domainIdentity,
-    domainTarget?.name,
-    domainTarget?.domain,
-    domainTarget?.ip
-  ].filter(Boolean).map(normalizeToken));
+  const domainIdentityTokens = new Set([domainIdentity, domainTarget?.name, domainTarget?.domain, domainTarget?.ip].filter(Boolean).map(normalizeToken));
   const matchingGlobalAssignments = (globalAssignments?.objects || []).filter((assignment) => {
     const dependentDomain = assignment?.["dependent-domain"] || assignment?.dependentDomain || {};
-    const candidates = [dependentDomain.name, dependentDomain.uid, ...allIpv4Values(dependentDomain)];
-    return candidates.some((candidate) => domainIdentityTokens.has(normalizeToken(candidate)));
+    return [dependentDomain.name, dependentDomain.uid, ...allIpv4Values(dependentDomain)].some((candidate) => domainIdentityTokens.has(normalizeToken(candidate)));
   });
-  const assignedGlobalPolicyNames = uniqueStrings(matchingGlobalAssignments
-    .map((assignment) => objectDisplayName(assignment?.["global-access-policy"] || assignment?.globalAccessPolicy))
-    .filter(Boolean));
+  const assignedGlobalPolicyNames = uniqueStrings(matchingGlobalAssignments.map((assignment) => objectDisplayName(assignment?.["global-access-policy"] || assignment?.globalAccessPolicy)).filter(Boolean));
   const assignedGlobalPolicyTokens = new Set(assignedGlobalPolicyNames.map(normalizeToken));
-  const assignedGlobalPackages = globalPackages?.ok ? {
-    ...globalPackages,
-    objects: (globalPackages.objects || []).filter((policyPackage) => assignedGlobalPolicyTokens.has(normalizeToken(policyPackage?.name || policyPackage?.NAME || policyPackage?.uid)))
-  } : globalPackages;
+  const assignedGlobalPackages = globalPackages?.ok ? { ...globalPackages, objects: (globalPackages.objects || []).filter((policyPackage) => assignedGlobalPolicyTokens.has(normalizeToken(policyPackage?.name || policyPackage?.NAME || policyPackage?.uid))) } : globalPackages;
   const managementName = managementTargets.map((target) => target.name).filter(Boolean).join(", ") || loginManagement.name || managementLoginHost(session) || session.baseUrl;
   const rowsByPolicy = new Map();
   const packageLookup = buildAccessLayerPackageLookup(packagesResult);
@@ -5381,13 +5370,9 @@ async function collectAdministrativeSourceIpEvidence(session, gatewaysAndServers
   const automaticNatRows = [];
   const translatedDestinationNatRows = [];
   const manualNatOriginalDestinations = new Map();
-  if (session.mdsMode && !globalAssignments?.ok) {
-    errors.push({ scope: "MDS global assignment discovery", command: "show-global-assignments", error: globalAssignments?.error });
-  } else if (session.mdsMode && !matchingGlobalAssignments.length) {
-    errors.push({ scope: "MDS global assignment discovery", command: "show-global-assignments", error: { error: `No Global assignment was found for domain ${domainIdentity || domainTarget?.name || "Unknown"}.` } });
-  } else if (session.mdsMode && assignedGlobalPolicyNames.length && assignedGlobalPackages?.ok && !assignedGlobalPackages.objects.length) {
-    errors.push({ scope: "Global domain", command: "show-packages", error: { error: `Assigned Global access policy ${assignedGlobalPolicyNames.join(", ")} was not returned by show-packages.` } });
-  }
+  if (session.mdsMode && !globalAssignments?.ok) errors.push({ scope: "MDS global assignment discovery", command: "show-global-assignments", error: globalAssignments?.error });
+  else if (session.mdsMode && !matchingGlobalAssignments.length) errors.push({ scope: "MDS global assignment discovery", command: "show-global-assignments", error: { error: `No Global assignment was found for domain ${domainIdentity || domainTarget?.name || "Unknown"}.` } });
+  else if (session.mdsMode && assignedGlobalPolicyNames.length && assignedGlobalPackages?.ok && !assignedGlobalPackages.objects.length) errors.push({ scope: "Global domain", command: "show-packages", error: { error: `Assigned Global access policy ${assignedGlobalPolicyNames.join(", ")} was not returned by show-packages.` } });
   function addPolicyRow(policyName, row) {
     const key = `${policyName}:${row["Rule #"]}:${row.Source}:${row.Destination}:${row.Services}`;
     if (addedRows.has(key)) return;
@@ -5485,9 +5470,7 @@ async function collectAdministrativeSourceIpEvidence(session, gatewaysAndServers
     const refTokens = new Set(objectRefTokens([target.ref]));
     function containsNestedRef(node) {
       if (node === undefined || node === null) return false;
-      if (typeof node === "string" || typeof node === "number") {
-        return refTokens.has(normalizeToken(node));
-      }
+      if (typeof node === "string" || typeof node === "number") return refTokens.has(normalizeToken(node));
       if (Array.isArray(node)) return node.some(containsNestedRef);
       if (typeof node === "object") {
         if ([node.name, node.uid, node.NAME, node.UID].filter(Boolean).some((candidate) => refTokens.has(normalizeToken(candidate)))) return true;
@@ -5506,9 +5489,7 @@ async function collectAdministrativeSourceIpEvidence(session, gatewaysAndServers
       if (typeof node !== "object") return false;
       const addressKeys = new Set(["ipv4address", "ipaddress"]);
       const referenceKeys = new Set(["object", "objects", "value", "values", "member", "members", "reference", "references", "destination", "destinations"]);
-      return Object.entries(node).some(([key, child]) => addressKeys.has(normalizeToken(key))
-        ? firstIpv4(child) === targetIp
-        : (referenceKeys.has(normalizeToken(key)) && containsDirectIp(child)));
+      return Object.entries(node).some(([key, child]) => addressKeys.has(normalizeToken(key)) ? firstIpv4(child) === targetIp : (referenceKeys.has(normalizeToken(key)) && containsDirectIp(child)));
     }
     return containsDirectIp(value);
   }
@@ -5523,21 +5504,13 @@ async function collectAdministrativeSourceIpEvidence(session, gatewaysAndServers
       errors.push({ scope: "Global domain", command: "show-packages", error: assignedGlobalPackages?.error });
       return;
     }
-    const targets = [
-      ...managementTargets.filter((target) => target.role === "MDS management host" || target.role === "Domain management host"),
-      ...globalPolicyObjectRefs.map((ref) => ({ name: ref.name, ref }))
-    ];
+    const targets = [...managementTargets.filter((target) => target.role === "MDS management host" || target.role === "Domain management host"), ...globalPolicyObjectRefs.map((ref) => ({ name: ref.name, ref }))];
     for (const layer of accessLayersFromPackages(assignedGlobalPackages, { preservePackageOccurrences: true })) {
       const layerLookupName = layer.uid || layer.name;
       if (!layerLookupName) continue;
       let offset = 0;
       for (let page = 0; page < 100; page += 1) {
-        const rulebase = await tryCommand(globalSession, "show-access-rulebase", {
-          name: layerLookupName,
-          "details-level": "full",
-          limit: 500,
-          offset
-        });
+        const rulebase = await tryCommand(globalSession, "show-access-rulebase", { name: layerLookupName, "details-level": "full", limit: 500, offset });
         if (!rulebase.ok) {
           errors.push({ scope: "Global domain", layer: layerLookupName, offset, error: rulebase.error });
           break;
@@ -5595,10 +5568,7 @@ async function collectAdministrativeSourceIpEvidence(session, gatewaysAndServers
 
   async function collectDirectLocalRules() {
     if (!session.mdsMode || !packagesResult?.ok) return;
-    const targets = [
-      ...managementTargets.filter((target) => target.role === "MDS management host" || target.role === "Domain management host"),
-      ...globalPolicyObjectRefs.map((ref) => ({ name: ref.name, ref }))
-    ];
+    const targets = [...managementTargets.filter((target) => target.role === "MDS management host" || target.role === "Domain management host"), ...globalPolicyObjectRefs.map((ref) => ({ name: ref.name, ref }))];
     for (const layer of accessLayersFromPackages(packagesResult)) {
       const layerLookupName = layer.uid || layer.name;
       if (!layerLookupName) continue;
@@ -5695,13 +5665,9 @@ async function collectAdministrativeSourceIpEvidence(session, gatewaysAndServers
     const targetName = target.name;
     const targetIp = target.ip;
     if (target.role === "MDS management host") {
-      rememberObject(
-        target.ref,
-        target.matched ? "MDS Server (Global Domain)" : "MDS Server Hostname",
-        target.matched
-          ? `MDS object${targetIp ? ` (${targetIp})` : ""}; checked against the Global access policy assigned to this domain and this domain's local policies.`
-          : `No Global-domain MDS object matching ${targetName} was returned.`
-      );
+      rememberObject(target.ref, target.matched ? "MDS Server (Global Domain)" : "MDS Server Hostname", target.matched
+        ? `MDS object${targetIp ? ` (${targetIp})` : ""}; checked against the Global access policy assigned to this domain and this domain's local policies.`
+        : `No Global-domain MDS object matching ${targetName} was returned.`);
       continue;
     }
     if (target.matched && targetName) {
@@ -6218,21 +6184,11 @@ function resolveManagementObjectByIp(gatewaysAndServersResult, ip, fallbackName 
 function resolveManagementObjectByIdentity(gatewaysAndServersResult, identity, fallbackName = "") {
   const value = String(identity || "").trim();
   const ip = firstIpv4(value);
-  if (ip) {
-    return resolveManagementObjectByIp(gatewaysAndServersResult, ip, fallbackName || value);
-  }
-  if (!value || !gatewaysAndServersResult?.ok) {
-    return {
-      name: fallbackName || value,
-      matched: false,
-      object: null,
-      ip: ""
-    };
-  }
+  if (ip) return resolveManagementObjectByIp(gatewaysAndServersResult, ip, fallbackName || value);
+  if (!value || !gatewaysAndServersResult?.ok) return { name: fallbackName || value, matched: false, object: null, ip: "" };
   const token = normalizeToken(value);
   const match = (gatewaysAndServersResult.objects || []).find((object) => (
-    [object?.name, object?.NAME, object?.uid, object?.UID]
-      .filter(Boolean)
+    [object?.name, object?.NAME, object?.uid, object?.UID].filter(Boolean)
       .some((candidate) => normalizeToken(candidate) === token)
   ));
   return {
@@ -6259,14 +6215,7 @@ function resolveDomainManagementFromMdss(mdssResult, identity) {
       if (!domainMatches && !serverMatch) continue;
       const server = serverMatch || servers.find((candidate) => candidate?.active === true) || servers[0];
       if (!server) break;
-      return {
-        name: server.name || domain.name || value,
-        matched: true,
-        object: server,
-        ip: firstIpv4(allIpv4Values(server).join(" ")),
-        domain: domain.name || "",
-        mds: mds.name || ""
-      };
+      return { name: server.name || domain.name || value, matched: true, object: server, ip: firstIpv4(allIpv4Values(server).join(" ")), domain: domain.name || "", mds: mds.name || "" };
     }
   }
   return { name: value, matched: false, object: null, ip };
@@ -7959,6 +7908,14 @@ async function scanHardening(session) {
     managementObjectName: session.managementObjectName || "",
     gatewayTargets: gatewayInventory.runScriptTargets.map((gateway) => gateway.name || gateway.uid).filter(Boolean),
     clusterTargets: gatewayInventory.clusters.map((cluster) => cluster.name || cluster.uid).filter(Boolean),
+    clusterMemberships: gatewayInventory.clusters.flatMap((cluster) => {
+      const clusterName = cluster.name || cluster.NAME || cluster.uid || "";
+      const members = [
+        ...(cluster["cluster-member-names"] || cluster.clusterMemberNames || []),
+        ...(cluster["cluster-members"] || cluster.clusterMembers || []).map((member) => member?.name || member?.NAME || member)
+      ].filter(Boolean);
+      return members.map((memberName) => ({ memberName, clusterName }));
+    }),
     guide: {
       title: "Check Point Gateway and Management Hardening Administration Guide",
       date: "01 June 2026",
@@ -10538,28 +10495,29 @@ async function handleApi(req, res) {
     if (req.url === "/api/export-pdf" && req.method === "POST") {
       log("Local API request", { requestId, route: req.url });
       const session = getSession(payload.sessionId);
+      const reportLayout = payload.reportLayout === "infrastructure" ? "infrastructure" : "category";
       const customerPrefix = customerReportPrefix(session.customerName);
       if (session.moraMode) {
-        const archive = await generateMoraDomainReportsZip(session);
+        const archive = await generateMoraDomainReportsZip(session, reportLayout);
         res.writeHead(200, {
           "content-type": "application/zip",
-          "content-disposition": `attachment; filename="${customerPrefix}all-domain-hardening-reports.zip"`,
+          "content-disposition": `attachment; filename="${customerPrefix}all-domain-${reportLayout}-hardening-reports.zip"`,
           "content-length": archive.length
         });
         res.end(archive);
         return;
       }
-      const result = await generateHardeningReportPdf(session);
+      const result = await generateHardeningReportPdf(session, reportLayout);
       addAuditEntry({
         session,
         action: "Exported PDF Report",
         command: "generate-report-pdf",
         target: "Hardening Checks",
-        details: "Generated hardening report with cover and intro PDF."
+        details: `Generated ${reportLayout} hardening report with cover and intro PDF.`
       });
       res.writeHead(200, {
         "content-type": "application/pdf",
-        "content-disposition": `attachment; filename="${singleReportFilename(session.lastHardeningScan)}"`,
+        "content-disposition": `attachment; filename="${singleReportFilename(session.lastHardeningScan, reportLayout)}"`,
         "content-length": result.file.length
       });
       res.end(result.file, () => {

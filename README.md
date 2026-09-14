@@ -1,5 +1,7 @@
 # Check Point Hardening App - Open Public Edition
 
+> Development line: Version 2.0 (`develop/v2`). The protected V1 baseline is tagged `v1.0.0-baseline`; V1 maintenance belongs on `release/v1`.
+
 The Open Public Edition connects to a Check Point Security Management Server, Multi-Domain Server, or Smart-1 Cloud tenant, gathers Management API evidence, evaluates hardening checks, and can perform only the remediation actions explicitly offered in the interface.
 
 This project is independent and is not created, endorsed, or supported by Check Point Software Technologies.
@@ -18,7 +20,7 @@ The repository intentionally excludes generated reports, screenshots, diagrams, 
 
 ## Requirements
 
-- Node.js 18 or newer
+- Node.js 20 or newer
 - Network access from this computer to the target Check Point Management API
 - A Check Point API account or API key with permissions appropriate for the checks and any requested remediation
 
@@ -53,8 +55,8 @@ Remediation actions change the connected Check Point environment and require exp
 Build and run with Docker:
 
 ```sh
-docker build -f Docker/Dockerfile -t check-point-hardening-app-single-use-public-edition .
-docker run --rm -p 127.0.0.1:3100:3100 check-point-hardening-app-single-use-public-edition
+docker build -f Docker/Dockerfile -t check-point-hardening-app:v2-dev .
+docker run --rm --name check-point-hardening-v2 -p 127.0.0.1:3200:3100 check-point-hardening-app:v2-dev
 ```
 
 Or use Compose:
@@ -79,5 +81,6 @@ Docker/package_docker_image.sh
 
 - Do not commit exported reports or debug logs.
 - Do not add customer names, hostnames, IP addresses, usernames, screenshots, or copied API responses to this repository.
+- Keep engagement artifacts under `customer-data/`, `engagements/`, `reports/`, `exports/`, `screenshots/`, or `output/`; all are excluded from Git and Docker build contexts.
 - Store any intentionally exported artifact in the approved engagement location.
 - Stop the Node process or container after use to clear in-memory session data.

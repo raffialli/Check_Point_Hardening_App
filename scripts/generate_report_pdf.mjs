@@ -280,7 +280,222 @@ function groupChecks(checks) {
   return groups;
 }
 
-function reportSections(checks) {
+function checkOwnerScope(check = {}) {
+  const id = String(check.id || "");
+  if (id === "updates.dynamic-updates" || id === "updates.cpdiag") return "management";
+  if (id.startsWith("policy.") || id === "cve.site-to-site-communities" || id === "advanced.explicit-rules") return "policy";
+  if (id.startsWith("gaia.") || id.startsWith("updates.") || id.startsWith("security-feature-usage.") || id === "cve.legacy-clients") {
+    return id === "gaia.management-external-syslog" ? "management" : "gateway";
+  }
+  return "management";
+}
+
+const GATEWAY_NAME_COLUMNS = ["Gateway", "Name of Gateway", "Gateway Name", "Firewall Name", "Object Name", "Target", "Name"];
+
+function cellText(value) {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "object") return String(value.value ?? value.label ?? "");
+  return String(value);
+}
+
+function canonicalGatewayName(value) {
+  let name = cellText(value).trim();
+  const prefix = /^(?:management\s+(?:server\s+)?name|management|gateway\s+name|gateway|firewall\s+name|firewall|target\s+name|target|object\s+name|object)\s*(?::|-)\s*/i;
+  while (prefix.test(name)) name = name.replace(prefix, "").trim();
+  return name;
+}
+
+function gatewayKey(value) {
+  return canonicalGatewayName(value).replace(/\s+/g, " ").toLowerCase();
+}
+
+function targetNameFromRow(row = {}) {
+  for (const column of GATEWAY_NAME_COLUMNS) {
+    const value = canonicalGatewayName(row[column]);
+    if (value && value !== "N/A" && value !== "Not returned") return value;
+  }
+  return "";
+}
+
+function targetsForCheck(check = {}) {
+  const names = new Map();
+  const remember = (value) => {
+    const name = canonicalGatewayName(value);
+    const key = gatewayKey(name);
+    if (key && !names.has(key)) names.set(key, name);
+  };
+  for (const row of check.evidenceTable?.rows || []) remember(targetNameFromRow(row));
+  for (const table of check.evidenceTables || []) {
+    const rowNames = (table.rows || []).map(targetNameFromRow).filter(Boolean);
+    rowNames.forEach(remember);
+    if (!rowNames.length) remember(table.title);
+  }
+  return [...names.values()];
+}
+
+function rowMatchesTarget(row, target) {
+  return gatewayKey(targetNameFromRow(row)) === gatewayKey(target);
+}
+
+function textMentionsTarget(value, target) {
+  return String(value || "").replace(/\s+/g, " ").toLowerCase().includes(gatewayKey(target));
+}
+
+function targetDetailRows(rows = [], target) {
+  return rows.filter((row) => textMentionsTarget(row.text, target) || (row.bold || []).some((value) => textMentionsTarget(value, target)));
+}
+
+function targetEvidenceRows(check, target) {
+  return [
+    ...(check.evidenceTable?.rows || []).filter((row) => rowMatchesTarget(row, target)),
+    ...(check.evidenceTables || []).flatMap((table) => gatewayKey(table.title) === gatewayKey(target) ? (table.rows || []) : (table.rows || []).filter((row) => rowMatchesTarget(row, target)))
+  ];
+}
+
+function rowText(row = {}) {
+  return Object.entries(row).filter(([key]) => !key.startsWith("_")).map(([, value]) => cellText(value)).join(" ").toLowerCase();
+}
+
+function hasTargetFinding(check, target) {
+  const details = targetDetailRows(check.detailRows || [], target);
+  if (details.some((row) => row.tone === "critical" || (row.bold || []).length)) return true;
+  const rows = targetEvidenceRows(check, target);
+  if (rows.some((row) => row._select || row._remediation || Object.values(row).some((value) => value?.tone === "critical"))) return true;
+  if (check.id === "policy.stealth-rule") return rows.some((row) => /\bmissing\b|no exact match|does not have/.test(rowText(row)));
+  if (check.id === "gaia.allowed-host-access") return rows.some((row) => /\banyhost\b|\bany host\b|\btype any\b|\bany ip\b/.test(rowText(row)));
+  if (check.id === "updates.jumbo-hotfix") return rows.some((row) => String(row["Available Recommended Update"] || "").toLowerCase() === "yes");
+  return ["remediation-required", "remediation-recommended"].includes(check.status) && rows.length > 0;
+}
+
+function checkForTarget(check, target, targetCount) {
+  const evidenceTableRows = (check.evidenceTable?.rows || []).filter((row) => rowMatchesTarget(row, target));
+  const evidenceTable = evidenceTableRows.length ? { ...check.evidenceTable, selectable: false, rows: evidenceTableRows } : null;
+  const evidenceTables = (check.evidenceTables || []).filter((table) => gatewayKey(table.title) === gatewayKey(target) || (table.rows || []).some((row) => rowMatchesTarget(row, target))).map((table) => {
+    const tableIsTarget = gatewayKey(table.title) === gatewayKey(target);
+    const matching = (table.rows || []).filter((row) => rowMatchesTarget(row, target));
+    return { ...table, selectable: false, rows: matching.length && !tableIsTarget ? matching : (table.rows || []) };
+  });
+  return {
+    ...check,
+    infrastructureTarget: canonicalGatewayName(target),
+    evidence: targetCount > 1 ? `Showing only evidence and findings associated with ${canonicalGatewayName(target)}.` : check.evidence,
+    evidenceTable,
+    evidenceTables: evidenceTables.length ? evidenceTables : null,
+    detailRows: targetCount > 1 ? targetDetailRows(check.detailRows || [], target) : check.detailRows,
+    recommendationWarning: targetCount > 1 ? "" : check.recommendationWarning,
+    detailsWarning: targetCount > 1 ? "" : check.detailsWarning
+  };
+}
+
+function isManagementObjectCheck(check = {}) {
+  return check.category === "Management Plane Protection" || check.id === "gaia.management-external-syslog";
+}
+
+function managementObjectName(checks = [], scan = {}) {
+  if (scan.managementObjectName) return scan.managementObjectName;
+  for (const check of checks) {
+    for (const row of check.evidenceTable?.rows || []) {
+      const name = cellText(row["Management Server Name"] || row["Management Name"] || row["Management Object"] || "").trim();
+      if (name && name !== "N/A" && name !== "Not returned") return name;
+    }
+  }
+  return scan.reportDomainName || "Management server";
+}
+
+function infrastructureGatewayTargets(checks = [], scan = {}, objectName = "") {
+  const targets = new Map();
+  const remember = (value) => {
+    const name = canonicalGatewayName(value);
+    const key = gatewayKey(name);
+    if (key && key !== gatewayKey(objectName) && !targets.has(key)) targets.set(key, name);
+  };
+  (scan.gatewayTargets || []).forEach(remember);
+  checks.forEach((check) => targetsForCheck(check).forEach(remember));
+  return [...targets.values()].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+}
+
+function infrastructureGatewayLabel(targetName, scan = {}) {
+  const name = canonicalGatewayName(targetName);
+  const key = gatewayKey(name);
+  const clusterKeys = new Set((scan.clusterTargets || []).map(gatewayKey).filter(Boolean));
+  if (clusterKeys.has(key)) return `${name} (Cluster Object)`;
+  const membership = (scan.clusterMemberships || []).find((item) => gatewayKey(item.memberName) === key);
+  return membership?.clusterName ? `${name} (cluster member of: ${canonicalGatewayName(membership.clusterName)})` : name;
+}
+
+function infrastructureChecks(checks = [], scan = {}) {
+  const managementObjectChecks = checks.filter((check) => checkOwnerScope(check) === "management" && isManagementObjectCheck(check));
+  const objectName = managementObjectName(managementObjectChecks, scan);
+  const gatewayOwnedChecks = checks.filter((check) => checkOwnerScope(check) === "gateway");
+  const logicalClusterKeys = new Set((scan.clusterTargets || []).map(gatewayKey).filter(Boolean));
+  const knownGatewayTargets = infrastructureGatewayTargets(gatewayOwnedChecks, scan, objectName);
+  const output = [
+    ...checks.filter((check) => checkOwnerScope(check) === "management" && !isManagementObjectCheck(check)).map((check) => ({ ...check, infrastructureSection: "Policy and Management" })),
+    ...checks.filter((check) => checkOwnerScope(check) === "policy" && !["policy.stealth-rule", "policy.gateway-object-status"].includes(check.id)).map((check) => ({
+      ...check,
+      category: check.id === "policy.implied-rules" ? "Review Implied Rules" : check.category,
+      infrastructureSection: "Policy and Management"
+    })),
+    ...checks.filter((check) => check.id === "policy.gateway-object-status").map((check) => ({
+      ...check,
+      category: "Gateway Object SIC Status",
+      infrastructureSection: "Gateways and Clusters",
+      infrastructureTarget: "Gateway Object SIC Status"
+    })),
+    ...managementObjectChecks.map((check) => ({ ...check, infrastructureSection: "Policy and Management", infrastructureTarget: objectName }))
+  ];
+  const gatewayCandidates = [
+    ...gatewayOwnedChecks,
+    ...checks.filter((check) => check.id === "policy.stealth-rule")
+  ];
+  for (const check of gatewayCandidates) {
+    const checkTargets = targetsForCheck(check);
+    const targets = checkTargets.length ? checkTargets : knownGatewayTargets;
+    for (const target of targets) {
+      if (logicalClusterKeys.has(gatewayKey(target)) && check.id !== "policy.stealth-rule") continue;
+      if (check.id === "policy.stealth-rule" && !hasTargetFinding(check, target)) continue;
+      const targetCheck = checkForTarget(check, target, targets.length);
+      output.push({
+        ...targetCheck,
+        infrastructureSection: gatewayKey(target) === gatewayKey(objectName) ? "Policy and Management" : "Gateways and Clusters",
+        infrastructureTarget: infrastructureGatewayLabel(target, scan)
+      });
+    }
+  }
+  return output;
+}
+
+function reportSections(checks, layout = "category", scan = {}) {
+  if (layout === "infrastructure") {
+    const sectionOrder = ["Policy and Management", "Gateways and Clusters"];
+    const grouped = new Map(sectionOrder.map((name) => [name, []]));
+    infrastructureChecks(checks, scan).forEach((check) => grouped.get(check.infrastructureSection)?.push(check));
+    return [...grouped.entries()].filter(([, items]) => items.length).map(([title, items], sectionIndex) => ({
+      id: `report-infrastructure-${sectionIndex + 1}`,
+      marker: `CPTOC_INFRA_${sectionIndex + 1}`,
+      title,
+      checks: items.sort((a, b) => {
+        const targetA = a.infrastructureTarget === "Gateway Object SIC Status" ? "" : String(a.infrastructureTarget || "");
+        const targetB = b.infrastructureTarget === "Gateway Object SIC Status" ? "" : String(b.infrastructureTarget || "");
+        const targetOrder = targetA.localeCompare(targetB, undefined, { numeric: true });
+        if (targetOrder) return targetOrder;
+        const categoryRank = (check) => {
+          if (check.category === "Administrator Identity and Access Control") return 10;
+          if (check.category === "Review Implied Rules") return 20;
+          if (check.category === "Decreasing Security Gateway Exposure with Policy") return 10;
+          if (check.category === "Updates, Health, and Ongoing Protection") return 20;
+          return 50;
+        };
+        return categoryRank(a) - categoryRank(b);
+      }).map((check, checkIndex) => ({
+        check,
+        groupTitle: check.infrastructureTarget || "",
+        tocTitle: check.infrastructureTarget ? `${check.infrastructureTarget} - ${check.title}` : check.title,
+        id: `report-infrastructure-check-${sectionIndex + 1}-${checkIndex + 1}`,
+        marker: `CPTOC_INFRA_CHECK_${sectionIndex + 1}_${checkIndex + 1}`
+      }))
+    }));
+  }
   return [...groupChecks(checks).entries()].map(([category, categoryChecks], categoryIndex) => ({
     id: `report-category-${categoryIndex + 1}`,
     marker: `CPTOC_CATEGORY_${categoryIndex + 1}`,
@@ -294,6 +509,53 @@ function reportSections(checks) {
 }
 
 function renderToc(sections, pageNumbers = {}) {
+  const renderChecks = (section) => {
+    const grouped = [];
+    for (const entry of section.checks) {
+      const target = String(entry.check.infrastructureTarget || "").trim();
+      if (!target) {
+        grouped.push({ target: "", entries: [entry] });
+        continue;
+      }
+      const existing = grouped.find((group) => group.target === target);
+      if (existing) existing.entries.push(entry);
+      else grouped.push({ target, entries: [entry] });
+    }
+    return grouped.map((group) => {
+      if (!group.target) {
+        return group.entries.map(({ check, id, marker }) => `
+          <li>
+            <a href="#${id}">
+              <span class="toc-label">${escapeHtml(check.title || "Untitled Check")}</span>
+              <span class="toc-leader" aria-hidden="true"></span>
+              <span class="toc-page">${escapeHtml(String(pageNumbers[marker] || "000"))}</span>
+            </a>
+          </li>
+        `).join("");
+      }
+      const first = group.entries[0];
+      return `
+        <li class="toc-target">
+          <a href="#${first.id}" class="toc-target-link">
+            <span class="toc-label">${escapeHtml(group.target)}</span>
+            <span class="toc-leader" aria-hidden="true"></span>
+            <span class="toc-page">${escapeHtml(String(pageNumbers[first.marker] || "000"))}</span>
+          </a>
+          <ol class="toc-target-checks">
+            ${group.entries.map(({ check, id, marker }) => `
+              <li>
+                <a href="#${id}">
+                  <span class="toc-label">${escapeHtml(check.title || "Untitled Check")}</span>
+                  <span class="toc-leader" aria-hidden="true"></span>
+                  <span class="toc-page">${escapeHtml(String(pageNumbers[marker] || "000"))}</span>
+                </a>
+              </li>
+            `).join("")}
+          </ol>
+        </li>
+      `;
+    }).join("");
+  };
   return `
     <section class="table-of-contents">
       <h2>Table of Contents</h2>
@@ -307,15 +569,7 @@ function renderToc(sections, pageNumbers = {}) {
               <span class="toc-page">${escapeHtml(String(pageNumbers[section.marker] || "000"))}</span>
             </a>
             <ol class="toc-checks">
-              ${section.checks.map(({ check, id, marker }) => `
-                <li>
-                  <a href="#${id}">
-                    <span class="toc-label">${escapeHtml(check.title || "Untitled Check")}</span>
-                    <span class="toc-leader" aria-hidden="true"></span>
-                    <span class="toc-page">${escapeHtml(String(pageNumbers[marker] || "000"))}</span>
-                  </a>
-                </li>
-              `).join("")}
+              ${renderChecks(section)}
             </ol>
           </li>
         `).join("")}
@@ -354,6 +608,7 @@ function renderSummaryCard({ className = "", count, label, checks, emptyText }) 
 
 function renderHtml(scan, pageSize, pageNumbers = {}) {
   const checks = scan.checks || [];
+  const layout = scan.reportLayout === "infrastructure" ? "infrastructure" : "category";
   const summary = scan.summary || countSummary(checks);
   const remediationCount = Number(summary["remediation-required"] || 0) + Number(summary["remediation-recommended"] || 0);
   const reviewCount = Number(summary["needs-review"] || 0) + Number(summary["remediation-review-recommended"] || 0);
@@ -361,7 +616,7 @@ function renderHtml(scan, pageSize, pageNumbers = {}) {
   const remediationChecks = checksByStatuses(checks, ["remediation-required", "remediation-recommended"]);
   const reviewChecks = checksByStatuses(checks, ["needs-review", "remediation-review-recommended"]);
   const manualChecks = checksByStatuses(checks, ["manual", "informational"]);
-  const sections = reportSections(checks);
+  const sections = reportSections(checks, layout, scan);
   return `<!doctype html>
 <html>
 <head>
@@ -399,12 +654,17 @@ function renderHtml(scan, pageSize, pageNumbers = {}) {
     .table-of-contents { break-before: page; page-break-before: always; }
     .table-of-contents h2 { margin: 0 0 4px; color: #142033; font-size: 24px; line-height: 1.1; }
     .toc-intro { margin: 0 0 13px; color: #65758b; font-size: 10px; font-weight: 700; }
-    .toc-categories, .toc-checks { list-style: none; margin: 0; padding: 0; }
+    .toc-categories, .toc-checks, .toc-target-checks { list-style: none; margin: 0; padding: 0; }
     .toc-category { break-inside: avoid; margin: 0 0 7px; }
     .toc-category > a { color: #142033; font-size: 11px; font-weight: 900; }
     .toc-checks { margin: 3px 0 0 15px; }
     .toc-checks li { break-inside: avoid; margin: 0 0 2px; }
     .toc-checks a { color: #40516a; font-size: 9.5px; font-weight: 700; }
+    .toc-target { break-inside: avoid; margin: 4px 0 6px; }
+    .toc-target > .toc-target-link { color: #142033; font-size: 10px; font-weight: 900; }
+    .toc-target-checks { margin: 2px 0 0 16px; }
+    .toc-target-checks li { break-inside: avoid; margin: 0 0 2px; }
+    .toc-target-checks a { color: #526174; font-size: 9px; font-weight: 700; }
     .table-of-contents a { display: flex; align-items: baseline; gap: 6px; text-decoration: none; }
     .toc-label { min-width: 0; }
     .toc-leader { flex: 1 1 auto; min-width: 16px; border-bottom: 1px dotted #aab5c3; transform: translateY(-2px); }
@@ -412,6 +672,7 @@ function renderHtml(scan, pageSize, pageNumbers = {}) {
     .toc-marker { position: absolute; color: #ffffff; font-size: 1px; line-height: 1; }
     .category { margin-top: 0; break-before: page; page-break-before: always; break-inside: auto; }
     .category h2 { margin: 0 0 10px; color: #ee0c5d; font-size: 20px; line-height: 1.12; break-after: avoid; }
+    .infrastructure-target { margin: 16px 0 8px; padding: 7px 10px; border-left: 4px solid #e26a19; background: #fff8f2; color: #142033; font-size: 15px; break-after: avoid; }
     .check-card { break-inside: auto; border: 1px solid #d8e0ea; border-radius: 8px; padding: 12px; margin: 0 0 12px; }
     .check-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
     .check-header h4 { margin: 0; font-size: 15px; line-height: 1.18; }
@@ -457,6 +718,7 @@ function renderHtml(scan, pageSize, pageNumbers = {}) {
 </head>
 <body>
   <h1 class="report-title">Check Point Hardening App - Open Public Edition</h1>
+  <p class="report-meta"><strong>Report layout:</strong> ${layout === "infrastructure" ? "Infrastructure" : "Category"}</p>
   ${scan.reportDomainName ? `<p class="report-meta"><strong>Domain:</strong> ${escapeHtml(scan.reportDomainName)}</p>` : ""}
   <p class="report-meta">Scanned: ${escapeHtml(formatDate(scan.scannedAt))}</p>
   <div class="summary-grid">
@@ -470,7 +732,8 @@ function renderHtml(scan, pageSize, pageNumbers = {}) {
     <section class="category" id="${section.id}">
       <span class="toc-marker">${section.marker}</span>
       <h2>${escapeHtml(section.title)}</h2>
-      ${section.checks.map(({ check, id, marker }) => `
+      ${section.checks.map(({ check, groupTitle, id, marker }, checkIndex) => `
+        ${groupTitle && groupTitle !== section.checks[checkIndex - 1]?.groupTitle ? `<h3 class="infrastructure-target">${escapeHtml(groupTitle)}</h3>` : ""}
         <div id="${id}">
           <span class="toc-marker">${marker}</span>
           ${renderCheck(check)}
@@ -510,7 +773,7 @@ async function extractTocPageNumbers(pdfBytes, sections) {
 }
 
 async function renderBodyPdf(scan, outputPath, pageSize) {
-  const sections = reportSections(scan.checks || []);
+  const sections = reportSections(scan.checks || [], scan.reportLayout === "infrastructure" ? "infrastructure" : "category", scan);
   const chromePaths = [
     process.env.REPORT_CHROME_PATH,
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -660,6 +923,7 @@ async function basePageSize(basePath) {
 async function main() {
   const args = parseArgs(process.argv);
   const scan = JSON.parse(await readFile(args["scan-json"], "utf8"));
+  if (args.layout === "infrastructure") scan.reportLayout = "infrastructure";
   const bodyPath = join(dirname(args.output), "report-body.pdf");
   const pageSize = await basePageSize(args["base-pdf"]);
   const destinations = await renderBodyPdf(scan, bodyPath, pageSize);

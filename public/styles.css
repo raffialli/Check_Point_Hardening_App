@@ -540,6 +540,10 @@ button:disabled {
   width: 100%;
 }
 
+.actions #logoutButton {
+  grid-column: 1 / -1;
+}
+
 .actions #scanButton.is-scanning {
   cursor: wait;
 }
@@ -1141,6 +1145,184 @@ summary {
 .checks-list {
   display: grid;
   gap: 22px;
+}
+
+.result-view-switch {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel-soft);
+}
+
+.view-switch-button {
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.view-switch-button:hover {
+  background: rgba(255, 255, 255, 0.75);
+  color: var(--ink);
+}
+
+.view-switch-button.active {
+  background: var(--panel);
+  color: var(--accent);
+  box-shadow: 0 1px 4px rgba(20, 32, 51, 0.12);
+}
+
+.infrastructure-tree {
+  display: grid;
+  gap: 14px;
+}
+
+.hierarchy-node {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-left: 5px solid #65758b;
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.hierarchy-node.management-node {
+  border-left-color: #2557a7;
+}
+
+.hierarchy-node.management-object-node {
+  margin-top: 10px;
+  border-left-width: 3px;
+  border-left-color: #2557a7;
+  background: #f8fbff;
+}
+
+.hierarchy-node.policy-node {
+  border-left-color: #7b3fc6;
+}
+
+.hierarchy-node.gateways-node {
+  border-left-color: var(--accent);
+}
+
+.hierarchy-node.gateway-node {
+  border-left-width: 3px;
+  border-left-color: #e26a19;
+  background: #fffdfb;
+}
+
+.hierarchy-node.shared-node {
+  border-left-color: #8b97a8;
+  background: #fafbfc;
+}
+
+.hierarchy-summary {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.hierarchy-summary::-webkit-details-marker {
+  display: none;
+}
+
+.hierarchy-summary:hover {
+  background: var(--panel-soft);
+}
+
+.hierarchy-icon::before {
+  content: "›";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--accent);
+  font-size: 26px;
+  line-height: 1;
+  transition: transform 0.16s ease;
+}
+
+.hierarchy-node[open] > .hierarchy-summary .hierarchy-icon::before {
+  transform: rotate(90deg);
+}
+
+.hierarchy-heading {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.hierarchy-heading strong {
+  color: var(--ink);
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+
+.gateway-node > .hierarchy-summary .hierarchy-heading strong {
+  font-size: 16px;
+}
+
+.hierarchy-heading small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.hierarchy-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.hierarchy-count {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.hierarchy-content {
+  display: grid;
+  gap: 10px;
+  padding: 0 14px 14px;
+}
+
+.gateways-node > .hierarchy-content {
+  padding-left: 20px;
+  border-left: 1px dashed rgba(238, 12, 93, 0.24);
+  margin-left: 24px;
+}
+
+.hierarchy-empty {
+  margin: 0;
+  padding: 12px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.shared-finding-note {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-left: 3px solid #8b97a8;
+  border-radius: 4px;
+  background: #f1f4f8;
+  color: #526174;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .mora-domain-group {
@@ -1864,6 +2046,28 @@ summary {
     grid-template-columns: 18px minmax(0, 1fr);
   }
 
+  .result-view-switch {
+    width: 100%;
+  }
+
+  .view-switch-button {
+    flex: 1;
+  }
+
+  .hierarchy-summary {
+    grid-template-columns: 22px minmax(0, 1fr);
+  }
+
+  .hierarchy-meta {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+
+  .gateways-node > .hierarchy-content {
+    margin-left: 10px;
+    padding-left: 12px;
+  }
+
   .check-group-meta,
   .check-group-badges {
     grid-column: 2;
@@ -1912,6 +2116,10 @@ summary {
     grid-column: auto;
     justify-self: stretch;
     min-width: 0;
+  }
+
+  .actions #logoutButton {
+    grid-column: auto;
   }
 
   .actions button {
