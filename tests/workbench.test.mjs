@@ -1,9 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { statusBucket, matchesFinding, scopePresentation, orderNavigationScopes, summarizeFindings } from '../public/workbench.js';
+import { statusBucket, matchesFinding, scopePresentation, orderNavigationScopes, summarizeFindings, visibleTreeChecks } from '../public/workbench.js';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { checkOwnerScope, canonicalGatewayName, gatewayIdentityKey, displayCellValue, gatewayTargetsForCheck } from '../public/finding-model.js';
+
+test('tree traversal searches object names and preserves scoped identities and filter order', () => {
+  const checks = [{id:'same', title:'Allowed Hosts', category:'Gaia', status:'manual', severity:'high'}, {id:'other', title:'Logging', category:'Gaia', status:'pass', severity:'medium'}];
+  const scopes = ['EDGE-A','EDGE-B'].map(title => ({key:title,title,section:'Gateways and clusters',checks}));
+  assert.deepEqual(visibleTreeChecks(scopes,{query:'EDGE-B'}).map(e => e.scope.key), ['EDGE-B','EDGE-B']);
+  assert.deepEqual(visibleTreeChecks(scopes,{status:'manual'}).map(e => [e.scope.key,e.check.id]), [['EDGE-A','same'],['EDGE-B','same']]);
+  assert.equal(visibleTreeChecks(scopes,{query:'missing'}).length,0);
+  assert.equal(visibleTreeChecks(scopes,{}).length,4);
+});
 
 test('summary accounts for informational and unfamiliar statuses without merging reviewed with passed', () => {
   const statuses = ['remediation-required', 'remediation-recommended', 'needs-review', 'manual', 'unknown', 'pass', 'reviewed', 'informational', 'not-applicable', undefined];

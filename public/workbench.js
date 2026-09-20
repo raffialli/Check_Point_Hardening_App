@@ -2,6 +2,8 @@
 // Unselected cards live off-document, so target selectors can only see the
 // evidence the operator is currently reviewing. Scan/export data is untouched.
 let saved = { session: "", domain: "", scope: "", check: "", query: "", status: "", severity: "" };
+const expandedBranches = new Map();
+let busyObserver;
 
 export function statusBucket(status) {
   if (["remediation-required", "remediation-recommended"].includes(status)) return "action";
@@ -87,6 +89,12 @@ export function matchesFinding(check, filters) {
     && (!filters.severity || check.severity === filters.severity);
 }
 
+export function visibleTreeChecks(scopes, filters) {
+  return orderNavigationScopes(scopes).flatMap(scope => scope.checks
+    .filter(check => matchesFinding({...check, title: `${scope.title} ${check.title}`}, filters))
+    .map(check => ({scope, check})));
+}
+
 function scopesFrom(root, view) {
   const scopes = [];
   const add = (key, title, section, cards, description = "") => {
@@ -107,7 +115,10 @@ function scopesFrom(root, view) {
 }
 
 export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", viewSwitch, commandPanel, guideLink } = {}) {
-  if (saved.session !== sessionKey) saved = { session: sessionKey, domain: "", scope: "", check: "", query: "", status: "", severity: "" };
+  if (saved.session !== sessionKey) {
+    saved = { session: sessionKey, domain: "", scope: "", check: "", query: "", status: "", severity: "" };
+    expandedBranches.clear();
+  }
   const domainNodes = [...host.querySelectorAll(".mora-domain-group")];
   const domains = domainNodes.length ? domainNodes.map((node, index) => ({
     key: `${index}:${node.dataset.domainName}`, title: node.dataset.domainName,
@@ -119,19 +130,15 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
   host.parentElement.classList.add('has-workbench');
   const nav = element("nav", "wb-nav");
   nav.setAttribute("aria-label", "Scan objects");
-  const center = element("section", "wb-findings");
   const detail = element("section", "wb-detail");
   detail.id = 'selectedCheckEvidence';
   detail.tabIndex = -1;
   detail.setAttribute("aria-label", "Selected check evidence");
   const navList = element("div", "wb-nav-list");
-  const heading = element("h2", "wb-scope-title");
-  const breadcrumb = element('p', 'wb-breadcrumb');
-  const description = element("p", "wb-scope-description");
   const filters = element("div", "wb-filters");
   const query = element("input");
-  query.type = "search"; query.placeholder = "Search checks…"; query.value = saved.query;
-  query.setAttribute("aria-label", "Search checks in selected object");
+  query.type = "search"; query.placeholder = "Find an object or check"; query.value = saved.query;
+  query.setAttribute("aria-label", "Find an object or check");
   const makeSelect = (label, options, value) => {
     const select = element("select"); select.setAttribute("aria-label", label);
     for (const [id, text] of options) { const option = element("option", "", text); option.value = id; select.append(option); }
@@ -141,33 +148,62 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
   const severity = makeSelect("Filter by severity", [["", "All severities"], ["high", "High"], ["medium", "Medium"], ["low", "Low"]], saved.severity);
   filters.append(query, status, severity);
   const count = element("p", "wb-count"); count.setAttribute("role", "status");
-  const list = element("div", "wb-check-list");
-  const columns = element('div', 'wb-list-columns'); columns.setAttribute('aria-hidden', 'true');
-  columns.append(element('span', '', 'Check'), element('span', '', 'Status'), element('span', '', 'Severity'), element('span'));
-  center.append(breadcrumb, heading, description, filters, count, columns, list);
   if (viewSwitch) nav.append(viewSwitch);
   else nav.append(element("h2", "wb-nav-title", view === "hierarchy" ? "Infrastructure" : "Categories"));
   let domain = domains.find((item) => item.key === saved.domain) || domains[0];
-  let scope;
-  const showCheck = (check) => {
-    saved.check = check?.id || "";
-    detail.replaceChildren();
-    list.querySelectorAll("button").forEach((button) => {
-      const selected = button.dataset.checkId === saved.check;
-      button.classList.toggle("selected", selected);
-      button.setAttribute("aria-pressed", String(selected));
+  let entries = [];
+  let selectedIndex = -1;
+  const toolbar = element('div', 'wb-evidence-toolbar');
+  const context = element('p', 'wb-evidence-context');
+  const pager = element('div', 'wb-pager');
+  const previous = element('button', '', 'Previous'); previous.type = 'button';
+  const position = element('span', 'wb-position'); position.setAttribute('role', 'status');
+  const next = element('button', '', 'Next'); next.type = 'button';
+  busyObserver?.disconnect();
+  busyObserver = new MutationObserver(() => {
+    previous.disabled = host.inert || selectedIndex <= 0;
+    next.disabled = host.inert || selectedIndex < 0 || selectedIndex >= entries.length - 1;
+  });
+  busyObserver.observe(host, {attributes: true, attributeFilter: ['inert']});
+  const back = element('button', 'wb-back', 'Back to checks'); back.type = 'button';
+  const content = element('div', 'wb-evidence-content');
+  pager.append(previous, position, next); toolbar.append(context, pager, back);
+  detail.append(toolbar, content);
+  const branchKey = (scope, category = '') => JSON.stringify([sessionKey, view, domain.key, scope.key, category]);
+  const revealSelection = () => {
+    const button = navList.querySelector('.wb-tree-check.selected');
+    if (!button) return;
+    let parent = button.parentElement;
+    while (parent && parent !== navList) {
+      if (parent.tagName === 'DETAILS') {
+        parent.open = true;
+        if (!saved.query && !saved.status && !saved.severity) expandedBranches.set(parent.dataset.branchKey, true);
+      }
+      parent = parent.parentElement;
+    }
+    const row = button.getBoundingClientRect(), bounds = navList.getBoundingClientRect();
+    if (row.top < bounds.top) navList.scrollTop -= bounds.top - row.top;
+    else if (row.bottom > bounds.bottom) navList.scrollTop += row.bottom - bounds.bottom;
+  };
+  const showCheck = (index, {reveal = false, mobile = false} = {}) => {
+    selectedIndex = index;
+    const entry = entries[index];
+    const check = entry?.check, scope = entry?.scope;
+    saved.check = check?.id || ''; saved.scope = scope?.key || '';
+    content.replaceChildren();
+    navList.querySelectorAll('.wb-tree-check').forEach(button => {
+      const selected = Number(button.dataset.index) === index;
+      button.classList.toggle('selected', selected);
+      button.setAttribute('aria-current', selected ? 'true' : 'false');
     });
-    if (!check) { detail.append(element("p", "wb-empty", "Select a check to review its evidence.")); return; }
-    const context = element("p", "wb-evidence-context", `${scopePresentation(scope.title, scope.section).name} / ${check.category} · Check ${scope.checks.indexOf(check) + 1} of ${scope.checks.length}`);
-    const toolbar = element('div', 'wb-evidence-toolbar');
-    const back = element('button', 'wb-back', 'Back to checks'); back.type = 'button';
-    back.addEventListener('click', () => {
-      if (host.inert) return;
-      host.classList.remove('show-evidence');
-      list.querySelector('.selected')?.focus({preventScroll: true});
-      center.scrollIntoView({block: 'start'});
-    });
-    toolbar.append(context, back);
+    previous.disabled = index <= 0; next.disabled = index < 0 || index >= entries.length - 1;
+    position.textContent = entries.length ? `${index + 1} of ${entries.length}` : '0 checks';
+    if (!check) {
+      context.textContent = domain.title;
+      content.append(element('p', 'wb-empty', domain.error || 'No checks match these filters.'));
+      return;
+    }
+    context.textContent = `${scopePresentation(scope.title, scope.section).name} / ${check.category}`;
     check.card.open = true;
     check.card.querySelectorAll('.evidence-table-wrap').forEach((wrap) => {
       wrap.tabIndex = 0; wrap.setAttribute('role', 'region');
@@ -179,68 +215,85 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
         wrap.classList.add('wb-wide-table');
       }
     });
-    detail.append(toolbar, check.card);
+    content.append(check.card);
     detail.scrollTop = 0;
-  };
-  const showList = () => {
-    list.replaceChildren();
-    const checks = (scope?.checks || []).filter((check) => matchesFinding(check, saved));
-    count.textContent = `${checks.length} of ${scope?.checks.length || 0} checks`;
-    let category = "";
-    for (const check of checks) {
-      if (category !== check.category) { category = check.category; list.append(element("h3", "wb-category", category)); }
-      const button = element("button", "wb-check-row"); button.type = "button"; button.dataset.checkId = check.id;
-      button.setAttribute('aria-controls', detail.id);
-      const title = element("span", "wb-check-title", check.title);
-      const bucket = statusBucket(check.status);
-      const statusText = {action:'Action needed', review:'Review'}[bucket] || check.statusText;
-      const badge = element('span', `wb-status ${bucket}`, statusText); badge.title = check.statusText;
-      button.setAttribute('aria-label', `${check.title} — ${check.statusText}, ${check.severity}`);
-      button.append(title, badge, element('span', `wb-severity ${check.severity}`, check.severity), icon('chevron')); button.addEventListener("click", () => {
-        if (host.inert) return;
-        showCheck(check);
-        if (matchMedia("(max-width: 760px), (max-height: 650px)").matches) {
-          host.classList.add('show-evidence');
-          detail.focus({preventScroll: true}); detail.scrollIntoView({block: 'start'});
-        }
-      }); list.append(button);
+    if (reveal) revealSelection();
+    if (mobile && matchMedia('(max-width: 760px)').matches) {
+      host.classList.add('show-evidence');
+      detail.focus({preventScroll: true}); host.scrollIntoView({block: 'start'});
     }
-    if (!checks.length) {
-      list.append(element("p", "wb-empty", domain.error || (scope ? "No checks match these filters." : "No checks were returned for this domain.")));
-      if (scope) { const clear = element("button", "", "Clear filters"); clear.type = "button"; clear.onclick = () => { saved.query = saved.status = saved.severity = ""; query.value = status.value = severity.value = ""; showList(); }; list.append(clear); }
-    }
-    showCheck(checks.find((check) => check.id === saved.check) || checks[0]);
   };
-  const chooseScope = (next) => {
+  previous.addEventListener('click', () => { if (!host.inert && selectedIndex > 0) showCheck(selectedIndex - 1, {reveal: true}); });
+  next.addEventListener('click', () => { if (!host.inert && selectedIndex < entries.length - 1) showCheck(selectedIndex + 1, {reveal: true}); });
+  back.addEventListener('click', () => {
+    if (host.inert) return;
     host.classList.remove('show-evidence');
-    scope = next; saved.scope = scope?.key || "";
-    const presentation = scope ? scopePresentation(scope.title, scope.section) : null;
-    heading.textContent = presentation?.name || domain.title;
-    breadcrumb.textContent = scope?.section || domain.title;
-    description.textContent = presentation?.subtitle || scope?.description || "Review findings and their supporting evidence.";
-    navList.querySelectorAll("button").forEach((button) => { const active = button.dataset.scope === saved.scope; button.classList.toggle("selected", active); button.setAttribute("aria-pressed", String(active)); });
-    showList();
-  };
+    navList.querySelector('.selected')?.focus({preventScroll: true});
+  });
   const showDomain = () => {
-    saved.domain = domain.key; navList.replaceChildren(); let section = "";
+    saved.domain = domain.key;
+    entries = visibleTreeChecks(domain.scopes, saved);
+    const found = entries.findIndex(entry => entry.scope.key === saved.scope && entry.check.id === saved.check);
+    const index = entries.length ? Math.max(0, found) : -1;
+    const chosen = entries[index];
+    const filtering = Boolean(saved.query || saved.status || saved.severity);
+    const scroll = navList.scrollTop;
+    navList.replaceChildren(); let section = '';
+    count.textContent = `${entries.length} ${view === 'categories' ? 'checks' : 'object checks'} in this view`;
+    const branch = (key, label, kind, initiallyOpen) => {
+      const node = element('details', 'wb-tree-branch');
+      node.dataset.branchKey = key;
+      if (!expandedBranches.has(key)) expandedBranches.set(key, initiallyOpen);
+      node.open = filtering || expandedBranches.get(key);
+      const summary = element('summary');
+      if (kind) summary.append(icon(kind));
+      summary.append(element('span', '', label)); node.append(summary);
+      summary.addEventListener('click', event => {
+        if (host.inert) { event.preventDefault(); return; }
+        if (!filtering) expandedBranches.set(key, !node.open);
+      });
+      return node;
+    };
     for (const item of orderNavigationScopes(domain.scopes)) {
+      const itemEntries = entries.map((entry, i) => ({...entry, index: i})).filter(entry => entry.scope === item);
+      if (!itemEntries.length) continue;
       if (item.section !== section) { section = item.section; navList.append(element("h3", "wb-nav-section", section)); }
       const presentation = scopePresentation(item.title, item.section);
-      const button = element("button", `wb-object${presentation.parent ? ' wb-member' : ''}`); button.type = "button"; button.dataset.scope = item.key;
-      const label = element('span', 'wb-object-label'); label.append(element('span', 'wb-object-name', presentation.name));
-      if (presentation.subtitle) label.append(element('small', 'wb-object-type', presentation.subtitle));
-      button.append(icon(presentation.kind), label);
-      button.append(element("span", "wb-object-count", String(item.checks.length)));
-      button.addEventListener("click", () => { if (!host.inert) chooseScope(item); }); navList.append(button);
+      const object = branch(branchKey(item), presentation.name, presentation.kind, chosen?.scope === item);
+      if (presentation.subtitle) object.querySelector('summary span').append(element('small', 'wb-object-type', presentation.subtitle));
+      navList.append(object);
+      const categories = new Map();
+      for (const entry of itemEntries) {
+        let parent = object;
+        if (view !== 'categories') {
+          if (!categories.has(entry.check.category)) {
+            const category = branch(branchKey(item, entry.check.category), entry.check.category, null, chosen?.check.category === entry.check.category);
+            object.append(category); categories.set(entry.check.category, category);
+          }
+          parent = categories.get(entry.check.category);
+        }
+        const button = element('button', 'wb-tree-check'); button.type = 'button'; button.dataset.index = entry.index;
+        button.setAttribute('aria-controls', detail.id);
+        button.setAttribute('aria-label', `${entry.check.title}, ${entry.check.statusText}, ${entry.check.severity}`);
+        const mark = element('span', `wb-state-mark ${statusBucket(entry.check.status)}`); mark.setAttribute('aria-hidden', 'true');
+        button.append(mark, element('span', '', entry.check.title)); button.title = entry.check.statusText;
+        button.addEventListener('click', () => { if (!host.inert) showCheck(entry.index, {mobile: true}); }); parent.append(button);
+      }
     }
-    chooseScope(domain.scopes.find((item) => item.key === saved.scope) || domain.scopes[0]);
+    if (!entries.length) {
+      navList.append(element('p', 'wb-empty', domain.error || 'No matching checks.'));
+      const clear = element('button', '', 'Clear filters'); clear.type = 'button';
+      clear.onclick = () => { if (host.inert) return; saved.query = saved.status = saved.severity = ''; query.value = status.value = severity.value = ''; showDomain(); };
+      if (filtering) navList.append(clear);
+    }
+    showCheck(index); navList.scrollTop = scroll;
   };
   if (domainNodes.length) {
     const domainSelect = makeSelect("Domain", domains.map((item) => [item.key, `${item.title}${item.error ? " — scan failed" : ""}`]), domain.key);
-    domainSelect.addEventListener("change", () => { if (host.inert) return; domain = domains.find((item) => item.key === domainSelect.value); saved.check = ""; showDomain(); });
+    domainSelect.addEventListener("change", () => { if (host.inert) return; domain = domains.find((item) => item.key === domainSelect.value); saved.check = ""; host.classList.remove('show-evidence'); showDomain(); });
     nav.append(element("label", "wb-domain-label", "Domain"), domainSelect);
   }
-  nav.append(navList);
+  nav.append(filters, count, navList);
   const footer = element('div', 'wb-nav-footer');
   if (commandPanel) {
     const api = element('button', 'wb-resource-link'); api.type = 'button';
@@ -265,7 +318,7 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
   nav.append(footer);
   for (const control of [query, status, severity]) control.addEventListener(control === query ? "input" : "change", () => {
     if (host.inert) return;
-    saved.query = query.value; saved.status = status.value; saved.severity = severity.value; showList();
+    saved.query = query.value; saved.status = status.value; saved.severity = severity.value; showDomain();
   });
-  host.append(nav, center, detail); showDomain();
+  host.append(nav, detail); showDomain();
 }

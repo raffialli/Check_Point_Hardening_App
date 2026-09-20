@@ -139,3 +139,45 @@ body:has(#workspace:not(.hidden)) .app { width: 100%; max-width: none; padding: 
 .workspace .summary-card.total .summary-value { color: #142033; }
 .workspace .summary-card.unknown .summary-value { color: #526278; }
 .workspace .summary-card.informational .summary-value { color: #175ca4; }
+
+/* Object → section → check navigation with one independently scrolling document. */
+.workbench { grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: calc(100dvh - 245px); min-height: 460px; }
+.workbench .wb-nav { position: static; grid-row: 1; width: 340px; min-width: 280px; max-width: 480px; height: 100%; min-height: 0; max-height: none; box-sizing: border-box; resize: horizontal; padding-bottom: 12px; }
+.workbench .wb-detail { display: block; grid-column: 2; grid-row: 1; overflow-y: auto; min-height: 0; padding: 0 22px 22px; }
+.workbench .wb-evidence-toolbar { position: sticky; top: 0; z-index: 1; background: white; padding: 16px 0; margin: 0 0 20px; border-bottom: 1px solid var(--line); align-items: center; flex-wrap: wrap; }
+.wb-evidence-context { flex: 1 1 220px; }
+.wb-pager { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.wb-pager button { min-height: 40px; padding: 8px 12px; background: white; }
+.wb-pager button:disabled { opacity: .45; cursor: not-allowed; }
+.wb-position { color: #526278; font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.wb-nav .wb-filters { grid-template-columns: 1fr 1fr; margin-top: 10px; }
+.wb-nav .wb-filters input { grid-column: 1 / -1; }
+.wb-nav .wb-count { margin: 10px 4px; }
+.wb-nav .wb-nav-section { margin: 20px 4px 10px; }
+.wb-nav .wb-nav-list { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
+.wb-tree-branch { margin: 4px 0; border: 0; border-radius: 0; background: transparent; }
+.wb-tree-branch > summary { display: flex; gap: 8px; align-items: center; padding: 10px 4px; min-height: 40px; box-sizing: border-box; cursor: pointer; list-style: none; font-size: 13px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; color: #142033; }
+.wb-tree-branch > summary::-webkit-details-marker { display: none; }
+.wb-tree-branch > summary::before { content: ''; width: 6px; height: 6px; flex: 0 0 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); margin-right: 4px; }
+.wb-tree-branch[open] > summary::before { transform: rotate(45deg); }
+.wb-tree-branch > .wb-tree-branch { margin-left: 12px; padding-left: 8px; border-left: 1px solid #d8e0ea; }
+.wb-tree-branch > .wb-tree-branch > summary { font-size: 12px; color: #526278; }
+.wb-tree-check { display: flex; align-items: baseline; gap: 8px; width: 100%; padding: 10px 8px; min-height: 40px; margin: 2px 0; text-align: left; font-size: 12px; line-height: 1.45; font-weight: 500; background: transparent; border: 1px solid transparent; border-radius: 5px; overflow-wrap: anywhere; }
+.wb-tree-check:hover, .wb-tree-branch > summary:hover { background: #e8eef6; }
+.wb-tree-check.selected { background: #ffe9f1; color: #a50040; border-color: #f4c1d3; }
+.wb-state-mark { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 8px; background: #526278; }
+.wb-state-mark.action { background: #b42335; }
+.wb-state-mark.review { background: #866000; }
+.wb-state-mark.pass, .wb-state-mark.reviewed { background: #217044; }
+.wb-state-mark.manual, .wb-state-mark.informational { background: #175ca4; }
+.wb-nav-footer { padding-top: 12px; border-top: 1px solid var(--line); }
+.workbench .wb-back { display: none; }
+@media (max-width: 1000px) and (min-width: 761px) { .workbench .wb-nav { width: 300px; max-width: 380px; } }
+@media (max-width: 760px) {
+  .workbench { display: block; height: calc(100dvh - 24px); min-height: 420px; }
+  .workbench .wb-nav { width: 100%; min-width: 0; max-width: none; resize: none; border: 0; }
+  .workbench:not(.show-evidence) .wb-detail { display: none; }
+  .workbench.show-evidence .wb-nav { display: none; }
+  .workbench.show-evidence .wb-detail { height: 100%; box-sizing: border-box; padding-inline: 16px; }
+  .workbench .wb-back { display: inline-flex; }
+}
