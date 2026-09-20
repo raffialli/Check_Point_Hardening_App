@@ -24,7 +24,9 @@ function icon(kind) {
     cluster: '<rect x="7" y="3" width="14" height="12" rx="2"/><path d="M7 7h14M3 9v10a2 2 0 0 0 2 2h12"/>',
     category: '<path d="M4 5h16M4 12h16M4 19h16"/>',
     chevron: '<path d="m9 5 7 7-7 7"/>',
-    expand: '<path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/>'
+    expand: '<path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/>',
+    api: '<path d="m7 7-5 5 5 5m10-10 5 5-5 5m-3-13-4 20"/>',
+    guide: '<path d="M12 5C9 3 5 3 2 4v15c3-1 7-1 10 1 3-2 7-2 10-1V4c-3-1-7-1-10 1Zm0 0v15"/>'
   };
   const node = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   node.setAttribute('viewBox', '0 0 24 24'); node.setAttribute('aria-hidden', 'true');
@@ -92,7 +94,7 @@ function scopesFrom(root, view) {
   return scopes;
 }
 
-export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", viewSwitch } = {}) {
+export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", viewSwitch, commandPanel, guideLink } = {}) {
   if (saved.session !== sessionKey) saved = { session: sessionKey, domain: "", scope: "", check: "", query: "", status: "", severity: "" };
   const domainNodes = [...host.querySelectorAll(".mora-domain-group")];
   const domains = domainNodes.length ? domainNodes.map((node, index) => ({
@@ -216,6 +218,28 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
     nav.append(element("label", "wb-domain-label", "Domain"), domainSelect);
   }
   nav.append(navList);
+  const footer = element('div', 'wb-nav-footer');
+  if (commandPanel) {
+    const api = element('button', 'wb-resource-link'); api.type = 'button';
+    api.append(icon('api'), element('span', '', 'API Collection'));
+    api.setAttribute('aria-controls', commandPanel.id);
+    api.addEventListener('click', () => {
+      if (host.inert) return;
+      commandPanel.classList.remove('hidden');
+      const details = commandPanel.querySelector('details');
+      if (details) details.open = true;
+      commandPanel.scrollIntoView({block: 'start'});
+      commandPanel.querySelector('summary')?.focus({preventScroll: true});
+    });
+    footer.append(api);
+  }
+  if (guideLink) {
+    const guide = element('a', 'wb-resource-link');
+    guide.href = guideLink.href; guide.target = '_blank'; guide.rel = 'noreferrer';
+    guide.append(icon('guide'), element('span', '', 'Hardening Guide'));
+    footer.append(guide);
+  }
+  nav.append(footer);
   for (const control of [query, status, severity]) control.addEventListener(control === query ? "input" : "change", () => {
     if (host.inert) return;
     saved.query = query.value; saved.status = status.value; saved.severity = severity.value; showList();

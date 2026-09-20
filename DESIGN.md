@@ -143,6 +143,8 @@ Search spans both filter columns; status and severity share the next row. Fields
 
 ### Navigation
 
+API Collection and Hardening Guide are icon links anchored at the bottom of the left rail, below its scrollable object list. API Collection opens and focuses the existing command-details disclosure; the guide uses the original external URL in a new tab. The redundant guide strip is hidden once results are available.
+
 Object buttons are flat, left-aligned and include a check count. Selection uses pale pink, dark pink text and a border; hover is light slate. Group headings distinguish policy/management from gateways/clusters. Domain, scope, check and filter choices persist for the active session and reset when session identity changes. Infrastructure and Categories remain explicitly labeled alternatives.
 
 ### Check rows and evidence

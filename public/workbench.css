@@ -118,6 +118,14 @@ body:has(#workspace:not(.hidden)) .app { width: 100%; max-width: none; padding: 
 .wb-expand { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap !important; background: #fff; padding: 6px 8px; min-height: 34px; font-size: 11px !important; flex-shrink: 0; }
 .wb-expand .wb-icon { width: 16px; height: 16px; }
 .wb-table-hint { margin: 18px 0 4px; font-size: 11px; color: #526278; }
+.wb-nav { display: flex; flex-direction: column; overflow-y: hidden; }
+.wb-nav > :not(.wb-nav-list) { flex-shrink: 0; }
+.wb-nav-list { min-height: 0; overflow-y: auto; }
+.wb-nav-footer { margin-top: auto; padding: 22px 6px 0; display: grid; gap: 4px; }
+.wb-resource-link { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 8px 4px; border: 0; background: transparent; color: #175ca4; font-size: 13px; font-weight: 500; text-decoration: none; text-align: left; border-radius: 4px; }
+.wb-resource-link:hover { color: #123f70; background: #e8eef6; }
+.workspace:has(.workbench:not(:empty)) .guide-panel { display: none; }
+@media (max-width: 560px) { .wb-nav { max-height: 380px; } }
 .workbench.evidence-expanded { grid-template-columns: 250px minmax(0,1fr); }
 .evidence-expanded .wb-findings { display: none; }
 .evidence-expanded .wb-detail { grid-column: 2; }
