@@ -6,14 +6,17 @@ body:has(#workspace:not(.hidden)) .app { width: 100%; max-width: none; padding: 
 .workspace .title-stack.compact span:last-child { font-size: 13px; margin-top: 4px; color: #b40047; }
 .workspace .topbar-description { font-size: 12px; margin: 9px 0 0; max-width: 65ch; color: var(--muted); }
 .workspace #connectionLabel { font-size: 12px; margin: 0 0 8px; letter-spacing: 0; text-transform: none; }
-.workspace .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: none; }
-.workspace .actions button, .export-menu > summary { font-size: 13px; padding: 11px 15px; min-height: 42px; border-radius: 6px; }
-.workspace .actions #logoutButton { width: auto; grid-column: auto; }
-.workspace .actions #scanButton { min-width: 0; }
+.workspace .actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 8px; width: 320px; max-width: 100%; flex-shrink: 0; }
+.workspace .actions button, .export-menu > summary { box-sizing: border-box; font-size: 13px; line-height: 20px; padding: 11px 12px; min-height: 44px; border-radius: 6px; }
+.workspace .actions #logoutButton { width: 100%; grid-column: auto; }
+.workspace .actions #scanButton, .workspace .actions #cancelScanButton { width: 100%; min-width: 0; grid-column: 1 / -1; }
 .workspace .primary { background: #ca004c; }
-.export-menu { position: relative; }
-.export-menu > summary { cursor: pointer; border: 1px solid var(--line); background: white; font-weight: 650; }
-.export-options { position: absolute; top: calc(100% + 8px); right: 0; width: 290px; z-index: 10; padding: 12px; background: white; border: 1px solid var(--line); border-radius: 6px; }
+.export-menu { position: relative; margin: 0; }
+.export-menu > summary { display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; border: 1px solid var(--line); background: white; font-weight: 650; list-style: none; }
+.export-menu > summary::-webkit-details-marker { display: none; }
+.export-menu > summary::after { content: ''; width: 6px; height: 6px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(45deg); margin-top: -3px; }
+.export-menu[open] > summary::after { transform: rotate(225deg); margin-top: 3px; }
+.export-options { position: absolute; top: calc(100% + 8px); left: 0; box-sizing: border-box; width: calc(200% + 8px); z-index: 10; padding: 12px; background: white; border: 1px solid var(--line); border-radius: 6px; }
 .export-options button { width: 100%; margin-bottom: 8px; text-align: left; }
 .export-options p { margin: 4px; font-size: 12px; color: var(--muted); }
 .workspace .guide-panel { padding: 10px 16px; display: flex; align-items: center; margin-bottom: 0; border-radius: 6px; }
@@ -91,4 +94,5 @@ body:has(#workspace:not(.hidden)) .app { width: 100%; max-width: none; padding: 
 @media (max-width: 1199px) { .workbench { grid-template-columns: 190px minmax(260px, 1fr) minmax(310px, 1.2fr); } .workspace { padding: 0 12px 20px; } .wb-detail { padding: 18px; } }
 @media (max-width: 900px) { .workbench { grid-template-columns: 190px minmax(0, 1fr); } .wb-detail { grid-column: 1 / -1; border-top: 1px solid var(--line); } .workspace .topbar { flex-wrap: wrap; } }
 @media (max-width: 560px) { .workbench { display: block; } .wb-nav { border-right: 0; border-bottom: 1px solid var(--line); max-height: 250px; overflow-y: auto; } .wb-findings { border-right: 0; } .workspace .topbar { display: block; } .workspace .actions { margin-top: 16px; } .workspace .summary-grid { gap: 12px; } .workspace .summary-label { max-width: 100px; } #hardeningChecksPanel > .table-head { display: block; } .result-view-switch { margin-top: 12px; } .export-options { right: auto; left: -60px; width: 270px; } }
+@media (max-width: 560px) { .workspace .actions { width: 100%; } .export-options { left: 0; right: auto; width: calc(200% + 8px); } }
 @media print { .wb-nav, .wb-filters, .wb-check-list { display: none; } .workbench { display: block; } .wb-detail { overflow: visible; max-height: none; } }

@@ -121,7 +121,7 @@ The desktop results surface contains navigation, checks and evidence. Its implem
 
 At 1200px and wider, each pane scrolls vertically within `calc(100vh - 310px)` with a 550px minimum height. At 1199px and below, columns become `190px minmax(260px, 1fr) minmax(310px, 1.2fr)` and workspace horizontal padding becomes 12px. At 900px and below, evidence spans beneath navigation and checks; selection moves keyboard focus into evidence. At 560px and below, panes stack and navigation has a 250px scrolling maximum height. Evidence tables retain their original overflow handling.
 
-The header actions wrap. Export uses a native disclosure with a positioned menu; reports remain full-scan exports independent of selected checks and filters. Browser print styling is not the PDF report generator and must not be described as an equivalent full-scan export.
+The header actions form a 320px-wide two-column grid (full available width on mobile). Scan spans both columns; Export and Log out share the next row equally with an 8px gap. When visible, Cancel scan spans both columns. Export uses a native disclosure with a positioned menu spanning the action grid; reports remain full-scan exports independent of selected checks and filters. Browser print styling is not the PDF report generator and must not be described as an equivalent full-scan export.
 
 ## Elevation & Depth
 
@@ -135,7 +135,7 @@ Controls and the results container use gently curved six-pixel corners. Selected
 
 ### Buttons
 
-Header actions use 13px type, 11px × 15px padding and a 42px minimum height. Primary action is pink with white text; secondary actions remain white with an ink label and thin border. The inherited primary hover uses the global dark accent. Disabled buttons have half opacity and a not-allowed cursor. Workspace keyboard focus is a 2px dark-pink outline offset by 3px.
+Header actions use 13px type, 20px line height, 11px × 12px padding and a 44px minimum height. Primary action is pink with white text; secondary actions remain white with an ink label and thin border. The inherited primary hover uses the global dark accent. Disabled buttons have half opacity and a not-allowed cursor. Workspace keyboard focus is a 2px dark-pink outline offset by 3px.
 
 ### Inputs / Fields
 
