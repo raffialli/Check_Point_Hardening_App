@@ -1,5 +1,5 @@
 import { checkOwnerScope, canonicalGatewayName, gatewayIdentityKey, targetNameFromRow, displayCellValue, gatewayTargetsForCheck, collectionMessage } from "./finding-model.js";
-import { mountWorkbench } from "./workbench.js";
+import { mountWorkbench } from "./workbench.js?v=firewall-icons-1";
 let sessionId = "";
 let hardeningScan = null;
 const openCheckGroups = new Set();

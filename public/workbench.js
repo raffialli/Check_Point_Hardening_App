@@ -19,9 +19,9 @@ function element(tag, className, text) {
 // Small, neutral UI symbols—not a vendor logo. Kept local for offline use.
 function icon(kind) {
   const paths = {
-    gateway: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 6.5h.01M10 6.5h.01M7 14h10"/>',
-    management: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 11h6M9 15h2M9 18h2"/>',
-    cluster: '<rect x="7" y="3" width="14" height="12" rx="2"/><path d="M7 7h14M3 9v10a2 2 0 0 0 2 2h12"/>',
+    gateway: '<rect x="2" y="4" width="20" height="16" rx="1"/><path d="M2 9h20M2 15h20M8 4v5m8-5v5m-4 0v6m-4 0v5m8-5v5"/>',
+    management: '<rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><circle cx="7" cy="6.5" r=".75"/><circle cx="7" cy="17.5" r=".75"/><path d="M12 6.5h5M12 17.5h5M6 10v4m12-4v4"/>',
+    cluster: '<rect x="6" y="3" width="16" height="14" rx="1"/><path d="M6 8h16M6 12h16M14 3v5m-4 0v4m8-4v4m-4 0v5M2 7v14h16"/>',
     category: '<path d="M4 5h16M4 12h16M4 19h16"/>',
     chevron: '<path d="m9 5 7 7-7 7"/>',
     expand: '<path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/>',
