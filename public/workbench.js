@@ -34,6 +34,9 @@ function element(tag, className, text) {
 // Small, neutral UI symbols—not a vendor logo. Kept local for offline use.
 function icon(kind) {
   const paths = {
+    policy: '<path d="M6 3h12a3 3 0 0 1 3 3v12M6 3a3 3 0 0 0-3 3v2h5V6a3 3 0 0 0-2-3Zm2 5v11a3 3 0 0 0 3 3h9a3 3 0 0 0 3-3v-1H11v1a3 3 0 0 1-3 3M12 8h5m-5 4h5"/>',
+    review: '<path d="M13 21H5a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h8l5 5v4M13 1v5h5"/><circle cx="16" cy="15" r="5"/><path d="m20 19 3 3"/>',
+    left: '<path d="M20 12H4m6-6-6 6 6 6"/>',
     information: '<circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><circle cx="12" cy="17" r=".7"/>',
     gateway: '<rect x="2" y="4" width="20" height="16" rx="1"/><path d="M2 9h20M2 15h20M8 4v5m8-5v5m-4 0v6m-4 0v5m8-5v5"/>',
     management: '<rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><circle cx="7" cy="6.5" r=".75"/><circle cx="7" cy="17.5" r=".75"/><path d="M12 6.5h5M12 17.5h5M6 10v4m12-4v4"/>',
@@ -57,6 +60,9 @@ export function scopePresentation(title, section) {
   if (member) return { name: member[1], subtitle: `Member of ${member[2]}`, kind: 'gateway', parent: member[2] };
   if (title.endsWith(' (Cluster Object)')) return { name: title.slice(0, -17), subtitle: 'Cluster object', kind: 'cluster' };
   if (section === 'Categories') return { name: title, subtitle: '', kind: 'category' };
+  if (section === 'Policy and Management' && title === 'Policy and Management') {
+    return { name: 'Policy and Access', subtitle: '', kind: 'policy' };
+  }
   return { name: title, subtitle: '', kind: section === 'Policy and Management' ? 'management' : 'gateway' };
 }
 
@@ -202,6 +208,8 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
     const check = entry?.check, scope = entry?.scope;
     saved.check = check?.id || ''; saved.scope = scope?.key || '';
     content.replaceChildren();
+    toolbar.hidden = !check;
+    detail.classList.toggle('wb-awaiting-selection', !check && entries.length > 0);
     navList.querySelectorAll('.wb-tree-check').forEach(button => {
       const selected = Number(button.dataset.index) === index;
       button.classList.toggle('selected', selected);
@@ -211,7 +219,17 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
     position.textContent = entries.length ? `${index + 1} of ${entries.length}` : '0 checks';
     if (!check) {
       context.textContent = domain.title;
-      content.append(element('p', 'wb-empty', domain.error || 'No checks match these filters.'));
+      if (entries.length) {
+        const welcome = element('div', 'wb-review-start');
+        welcome.append(icon('review'), element('h2', '', 'Select a check to begin your review'),
+          element('p', '', 'Expand an object on the left, then choose a check to view its evidence and recommended actions.'));
+        const hint = element('p', 'wb-review-start-hint');
+        hint.append(icon('left'), element('span', '', 'You can also search for an object or check.'));
+        welcome.append(hint); content.append(welcome);
+      } else {
+        content.append(element('p', 'wb-empty', domain.error || 'No checks match these filters.'));
+      }
+      host.classList.remove('show-evidence');
       return;
     }
     context.textContent = `${scopePresentation(scope.title, scope.section).name} / ${check.category}`;
@@ -248,16 +266,16 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
     saved.domain = domain.key;
     entries = visibleTreeChecks(domain.scopes, saved);
     const found = entries.findIndex(entry => entry.scope.key === saved.scope && entry.check.id === saved.check);
-    const index = entries.length ? Math.max(0, found) : -1;
-    const chosen = entries[index];
+    // Never select an arbitrary finding before the operator chooses one.
+    const index = found;
     const filtering = Boolean(saved.query || saved.status || saved.severity);
     const scroll = navList.scrollTop;
     navList.replaceChildren(); let section = '';
     count.textContent = `${entries.length} ${view === 'categories' ? 'checks' : 'object checks'} in this view`;
-    const branch = (key, label, kind, initiallyOpen) => {
+    const branch = (key, label, kind) => {
       const node = element('details', 'wb-tree-branch');
       node.dataset.branchKey = key;
-      if (!expandedBranches.has(key)) expandedBranches.set(key, initiallyOpen);
+      if (!expandedBranches.has(key)) expandedBranches.set(key, false);
       node.open = filtering || expandedBranches.get(key);
       const summary = element('summary');
       if (kind) summary.append(icon(kind));
@@ -286,8 +304,7 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
         navList.append(button);
         continue;
       }
-      const selectedChild = chosen && clusterParentScope(domain.scopes, chosen.scope) === item;
-      const object = branch(branchKey(item), presentation.name, presentation.kind, chosen?.scope === item || Boolean(selectedChild));
+      const object = branch(branchKey(item), presentation.name, presentation.kind);
       if (presentation.subtitle) object.querySelector('summary span').append(element('small', 'wb-object-type', presentation.subtitle));
       const parentObject = objects.get(clusterParentScope(domain.scopes, item));
       if (parentObject) object.classList.add('wb-cluster-member');
@@ -298,7 +315,7 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
         let parent = object;
         if (view !== 'categories') {
           if (!categories.has(entry.check.category)) {
-            const category = branch(branchKey(item, entry.check.category), entry.check.category, null, chosen?.check.category === entry.check.category);
+            const category = branch(branchKey(item, entry.check.category), entry.check.category, null);
             object.append(category); categories.set(entry.check.category, category);
           }
           parent = categories.get(entry.check.category);

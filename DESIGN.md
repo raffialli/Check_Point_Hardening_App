@@ -33,6 +33,20 @@ typography:
   metadata:
     fontSize: "11px"
     fontWeight: 500
+  login-display:
+    fontSize: "clamp(30px, 3vw, 42px)"
+    lineHeight: 1.12
+  login-edition:
+    fontSize: "clamp(19px, 2vw, 25px)"
+    lineHeight: 1.3
+  login-body:
+    fontSize: "16px"
+    lineHeight: 1.65
+  login-label:
+    fontSize: "14px"
+  login-caption:
+    fontSize: "12px"
+    lineHeight: 1.65
 rounded:
   control: "6px"
   selection: "5px"
@@ -43,6 +57,8 @@ spacing:
   medium: "16px"
   detail: "22px"
   outer: "24px"
+  login-panel: "40px"
+  login-column-gap: "48px"
 components:
   button-primary:
     backgroundColor: "{colors.primary}"
@@ -84,7 +100,7 @@ components:
 
 The implemented world is a compact, light, evidence-first administrative interface. Slate navigation, white working surfaces and dark ink support sustained reading; pink identifies selection and the primary action. Fine separators keep the interface structured without turning every datum into a card.
 
-This document records the shipped results presentation from `public/workbench.css`, `public/workbench.js`, `public/styles.css` and `public/index.html`, not a pixel-exact reproduction of the concept image. The surface mode and task sequence remain in `docs/workbench-direction.md`. Legacy login styling, existing dialogs and PDF report design remain separate incumbent surfaces; this document does not authorize redesigning them or changing backend behavior.
+This document records the shipped login and results presentation from `public/login.css`, `public/workbench.css`, `public/workbench.js`, `public/styles.css` and `public/index.html`, not a pixel-exact reproduction of a concept image. The results task sequence remains in `docs/workbench-direction.md`. Existing dialogs and PDF reports retain their own styling; visual documentation does not authorize changing authentication, scan, remediation or export behavior.
 
 **Key Characteristics:**
 
@@ -92,6 +108,7 @@ This document records the shipped results presentation from `public/workbench.cs
 - Flat working surfaces and restrained pink selection.
 - Persistent object context beside original evidence.
 - Independent, text-only identity and offline assets.
+- A welcoming connection form with quiet diagnostics and personal creator attribution.
 
 ## Colors
 
@@ -117,7 +134,15 @@ Scope headlines use the headline token; list titles use the title token; evidenc
 
 ## Layout
 
-The desktop results surface uses a resizable 340px navigation tree and one evidence pane. Navigation follows object → section → check using native disclosures; Categories omits the redundant section tier. Navigation and evidence scroll independently within the viewport-height workspace. Only the selected branch opens initially; user-opened branches persist. Search matches objects, categories and checks and reveals matching branches. A sticky evidence toolbar provides Previous/Next in the filtered selected-domain order, boundary disabling and position feedback. Moving through checks reveals the selected tree row without rebuilding the tree. Original evidence cards and action listeners are retained. One summary counts every original check, including Informational and unfamiliar statuses; Reviewed remains distinct from Passed. Object-check counts in the tree may exceed unique scan totals because one check can apply to multiple objects.
+### Login — connect with confidence
+
+The login panel has a restrained two-column composition: introduction and creator credit on the left, connection form on the right. The panel uses the existing 1180px maximum app width, 40px padding and 48px column gap. Host and compact Port share a row; all other primary fields span the form. Authentication choices and conditional MDS fields retain their existing behavior. Backend status sits beneath Log in, with request metadata inside a native Connection diagnostics disclosure.
+
+At 820px and below, the layout becomes one column with 24px padding. The introduction is shortened, followed by the form, creator credit and disclaimer. The page grows naturally; no field or diagnostic is trapped in an internal vertical scroll area.
+
+### Results — navigate, then inspect
+
+The desktop results surface uses a resizable 340px navigation tree and one evidence pane. Navigation follows object → section → check using native disclosures; Categories omits the redundant section tier. Cluster members nest beneath their logical cluster. Gateway Object SIC Status is a direct evidence link with a circled exclamation icon, not a gateway branch. User-opened branches persist. Search matches objects, categories and checks and reveals matching branches. A sticky evidence toolbar provides Previous/Next in the filtered selected-domain order, boundary disabling and position feedback. Original evidence cards and action listeners are retained. One summary counts every original check, including Informational and unfamiliar statuses; Reviewed remains distinct from Passed. Object-check counts in the tree may exceed unique scan totals because one check can apply to multiple objects.
 
 Both tree and evidence grow to their content height and use normal document scrolling, not internal vertical scroll panes. Only the evidence toolbar sticks, keeping Previous/Next visible. Selecting a check returns to the beginning of its evidence. At 1000px and below, navigation defaults to 300px. Up to 760px wide, tree and evidence become separate views; Back restores the selected tree row. Short desktop screens still show evidence. There is no Expand mode or intermediate checklist. Evidence tables retain unbroken headers, normal word wrapping, and keyboard-focusable horizontal scrolling when content exceeds the available width. Wide tables include a visible scrolling hint.
 
@@ -143,7 +168,7 @@ Search spans both filter columns; status and severity share the next row. Fields
 
 ### Navigation
 
-API Collection and Hardening Guide are icon links anchored at the bottom of the left rail, below its scrollable object list. API Collection opens and focuses the existing command-details disclosure; the guide uses the original external URL in a new tab. The redundant guide strip is hidden once results are available.
+API Collection and Hardening Guide are icon links below the naturally growing object tree. API Collection opens and focuses the existing command-details disclosure; the guide uses the original external URL in a new tab. The redundant guide strip is hidden once results are available.
 
 Gateway and physical-member symbols use a brick-wall firewall; logical clusters use layered brick walls. Management uses a two-unit rack-server symbol. All are neutral local outline SVGs, not vendor marks.
 
@@ -159,6 +184,12 @@ During a busy operation the checks host is inert, preventing object, filter and 
 
 Evidence status/severity badges retain their original text and colors. Export is a native disclosure with full-scan scope explained in its menu. The original check disclosure remains a real details element, initially open when selected; its marker is visually suppressed in the evidence pane.
 
+### Login and creator credit
+
+The text-only product title leads; Open Public Edition is a smaller pink subtitle. Form controls are at least 44px high with normal-weight placeholders, explicit labels and a 2px pink keyboard-focus outline offset by 3px. Log in uses the primary pink and a darker hover treatment. The form's feedback remains visible; technical diagnostics are secondary, not removed.
+
+“Created by Adam” accompanies the linked WadesWeaponShed handle and a 56px circular avatar. The avatar is bundled as `public/creator-avatar.png`, not loaded from GitHub at runtime. The profile link opens `https://github.com/WadesWeaponShed/` in a new tab. Keep the independent-third-party disclaimer and explicit-remediation-approval wording visible. The creator image is personal attribution, never a Check Point brand mark.
+
 ## Do's and Don'ts
 
 ### Do:
@@ -172,5 +203,5 @@ Evidence status/severity badges retain their original text and colors. Export is
 
 - Don't use a Check Point logo, lookalike, generated brand mark or branded favicon.
 - Don't promote synthetic concept content to production data.
-- Don't apply this results redesign to legacy login or PDF layout without a separate request.
+- Don't extend login or results styling into PDF reports or authentication behavior without a separate request.
 - Don't claim pixel-exact concept matching or review approval from this design record.

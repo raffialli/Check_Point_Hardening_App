@@ -3,25 +3,27 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Check Point Hardening App - Open Public Edition</title>
+    <title>Check Point Hardening Review - Open Public Edition</title>
     <link rel="stylesheet" href="/styles.css?v=20260812-v2-production-login">
-    <link rel="stylesheet" href="/workbench.css?v=10">
+    <link rel="stylesheet" href="/workbench.css?v=11">
+    <link rel="stylesheet" href="/login.css?v=4">
   </head>
   <body>
     <main class="app">
       <section class="panel login-panel" id="loginPanel">
-        <div>
+        <div class="login-intro">
           <h1 class="title-stack">
-            <span>Check Point Best Practices</span>
+            <span>Check Point Hardening Review</span>
             <span>Open Public Edition</span>
           </h1>
-          <p class="lede">Scan a Check Point Management Server and its managed gateways for hardening-guide signals, and collect evidence for settings that need review or remediation. <a class="inline-guide-link" href="https://sc1.checkpoint.com/documents/Check_Point_Gateway_and_Management_Hardening/CP_Check_Point_Gateway_and_Management_Hardening.pdf" target="_blank" rel="noreferrer">Based on this guide</a>.</p>
-          <p class="lede">This tool is not created or supported by Check Point. Most checks are review-only, and any remediation action requires explicit operator approval.</p>
-          <div id="backendStatus" class="status-card disconnected" role="status">Checking local backend...</div>
-          <dl id="loginDiagnostics" class="diagnostics hidden"></dl>
+          <p class="lede">Review hardening posture across your management servers and gateways.</p>
+          <p class="lede login-description">Collect evidence, identify settings that need attention, and review remediation before making changes.</p>
+          <p class="login-disclaimer">Independent third-party tool. Not created or supported by Check Point. Most checks are review-only. Remediation requires explicit operator approval.</p>
+          <a class="login-guide" href="https://sc1.checkpoint.com/documents/Check_Point_Gateway_and_Management_Hardening/CP_Check_Point_Gateway_and_Management_Hardening.pdf" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v15M12 5C8 2 4 3 2 4v15c3-1 7-1 10 1 3-2 7-2 10-1V4c-2-1-6-2-10 1Z"/></svg>Read the hardening guide</a>
         </div>
 
         <form id="loginForm" class="grid-form">
+          <div class="login-form-heading full-row"><h2>Connect to your environment</h2><p>Enter your management server connection details.</p></div>
           <div id="moraModeBanner" class="mora-mode-banner full-row hidden" role="status">
             <strong>All Domain Scan Without Remediation</strong>
             <span>Every active MDS domain will be scanned sequentially. The Domain field is not required.</span>
@@ -35,17 +37,17 @@
               <option value="mds-all">Multi-Domain Server (MDS) - All Domain Scan w/o Remediation</option>
             </select>
           </label>
-          <label class="full-row">
+          <label class="login-host">
             Management Host
             <input id="host" name="host" placeholder="mgmt.example.com" required autocomplete="off">
+          </label>
+          <label class="login-port">
+            Port
+            <input id="port" name="port" placeholder="443" inputmode="numeric">
           </label>
           <label class="full-row">
             Company Name (Optional)
             <input id="customerName" name="customerName" placeholder="Company or organization name" maxlength="160" autocomplete="organization">
-          </label>
-          <label>
-            Port
-            <input id="port" name="port" placeholder="443" inputmode="numeric">
           </label>
           <label id="usernameField" class="full-row">
             Username
@@ -91,7 +93,14 @@
           </label>
           <div id="loginStatus" class="status-card disconnected" role="status">Not connected.</div>
           <button class="primary" type="submit">Log in</button>
+          <div class="login-backend full-row">
+            <div id="backendStatus" class="status-card disconnected" role="status">Checking local backend...</div>
+            <details class="login-diagnostics"><summary>Connection diagnostics</summary><dl id="loginDiagnostics" class="diagnostics hidden"></dl></details>
+          </div>
         </form>
+        <div class="login-credit">
+          <a class="creator-link" href="https://github.com/WadesWeaponShed/" target="_blank" rel="noreferrer"><img src="/creator-avatar.png" width="56" height="56" alt="Adam F.'s GitHub avatar"><span><span class="creator-caption">Created by Adam F.</span><span class="creator-name">WadesWeaponShed <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></span></span></a>
+        </div>
       </section>
 
       <section class="workspace hidden" id="workspace">
@@ -99,10 +108,11 @@
           <div>
             <p class="eyebrow" id="connectionLabel">Not connected</p>
             <h1 class="title-stack compact">
-              <span>Check Point Hardening App</span>
+              <span>Check Point Hardening Review</span>
               <span>Open Public Edition</span>
             </h1>
             <p class="topbar-description">Independent third-party tool. Not created, endorsed, or supported by Check Point.</p>
+            <p class="topbar-description">All checks based on Check Point's recommended <a href="https://sc1.checkpoint.com/documents/Check_Point_Gateway_and_Management_Hardening/CP_Check_Point_Gateway_and_Management_Hardening.pdf" target="_blank" rel="noopener noreferrer">Hardening Guide</a>.</p>
           </div>
           <div class="actions">
             <button id="scanButton" class="primary">Scan Hardening Posture</button>

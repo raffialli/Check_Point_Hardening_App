@@ -10692,14 +10692,20 @@ async function serveStatic(req, res) {
   }
 }
 
-const server = createServer((req, res) => {
+function handleRequest(req, res) {
   if (req.url.startsWith("/api/")) {
     void handleApi(req, res);
     return;
   }
   void serveStatic(req, res);
-});
+}
 
-server.listen(PORT, HOST, () => {
-  log("Check Point Hardening App - Open Public Edition listening", { url: `http://${HOST}:${PORT}` });
-});
+// Optional explicit interfaces share this process and its session state.
+const listenHosts = [...new Set([HOST, ...(process.env.ADDITIONAL_HOSTS || "").split(",")]
+  .map((host) => host.trim()).filter(Boolean))];
+for (const host of listenHosts) {
+  const server = createServer(handleRequest);
+  server.listen(PORT, host, () => {
+    log("Check Point Hardening App - Open Public Edition listening", { url: `http://${host}:${PORT}` });
+  });
+}

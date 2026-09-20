@@ -135,6 +135,12 @@ body:has(#workspace:not(.hidden)) .app { width: 100%; max-width: none; padding: 
 .workspace .summary-card.informational .summary-value { color: #175ca4; }
 
 /* Object → section → check navigation; evidence uses natural page scrolling. */
+.workbench .wb-evidence-toolbar[hidden] { display: none; }
+.wb-review-start { max-width: 620px; margin: 0 auto; padding: clamp(72px, 16vh, 180px) 24px 64px; text-align: center; }
+.wb-review-start > .wb-icon { width: 48px; height: 48px; color: #526278; margin-bottom: 24px; }
+.wb-review-start h2 { font-size: 23px; line-height: 1.3; margin: 0 0 16px; color: #142033; }
+.wb-review-start p { font-size: 15px; line-height: 1.65; color: #526278; }
+.wb-review-start .wb-review-start-hint { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 36px; font-size: 13px; }
 .workbench { grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto; height: auto; min-height: 460px; }
 #hardeningChecksPanel { overflow: clip; }
 .workbench .wb-nav { position: static; grid-row: 1; width: 340px; min-width: 280px; max-width: 480px; height: auto; min-height: 100%; max-height: none; box-sizing: border-box; resize: horizontal; padding-bottom: 12px; }

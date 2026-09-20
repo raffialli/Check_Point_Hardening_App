@@ -44,6 +44,8 @@ test('navigation separates object names from cluster relationship labels', () =>
   assert.deepEqual(scopePresentation('BRANCH-CL (Cluster Object)', 'Gateways and clusters'), {name:'BRANCH-CL',subtitle:'Cluster object',kind:'cluster'});
   assert.deepEqual(scopePresentation('BRANCH-A (cluster member of: BRANCH-CL)', 'Gateways and clusters'), {name:'BRANCH-A',subtitle:'Member of BRANCH-CL',kind:'gateway',parent:'BRANCH-CL'});
   assert.equal(scopePresentation('MGMT-LAB','Policy and Management').kind,'management');
+  assert.deepEqual(scopePresentation('Policy and Management','Policy and Management'), {name:'Policy and Access',subtitle:'',kind:'policy'});
+  assert.equal(scopePresentation('Policy and Management','Categories').kind,'category');
 });
 
 test('cluster members follow their parent without dropping standalone or orphaned targets', () => {
