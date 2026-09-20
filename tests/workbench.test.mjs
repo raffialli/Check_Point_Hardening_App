@@ -1,9 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { statusBucket, matchesFinding, scopePresentation, orderNavigationScopes, summarizeFindings, visibleTreeChecks } from '../public/workbench.js';
+import { statusBucket, matchesFinding, scopePresentation, orderNavigationScopes, summarizeFindings, visibleTreeChecks, clusterParentScope } from '../public/workbench.js';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { checkOwnerScope, canonicalGatewayName, gatewayIdentityKey, displayCellValue, gatewayTargetsForCheck } from '../public/finding-model.js';
+
+test('member nesting resolves only its matching cluster and preserves orphans', () => {
+  const scopes = ['CL (Cluster Object)', 'M1 (cluster member of: CL)', 'M2 (cluster member of: CL)', 'Orphan (cluster member of: missing)', 'Standalone'].map(title => ({title, section:'Gateways and clusters'}));
+  assert.equal(clusterParentScope(scopes,scopes[1]),scopes[0]);
+  assert.equal(clusterParentScope(scopes,scopes[2]),scopes[0]);
+  assert.equal(clusterParentScope(scopes,scopes[3]),null);
+  assert.equal(clusterParentScope(scopes,scopes[4]),null);
+  assert.equal(clusterParentScope(scopes,{...scopes[1],section:'Categories'}),null);
+});
 
 test('tree traversal searches object names and preserves scoped identities and filter order', () => {
   const checks = [{id:'same', title:'Allowed Hosts', category:'Gaia', status:'manual', severity:'high'}, {id:'other', title:'Logging', category:'Gaia', status:'pass', severity:'medium'}];

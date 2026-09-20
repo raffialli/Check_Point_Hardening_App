@@ -157,6 +157,7 @@ body:has(#workspace:not(.hidden)) .app { width: 100%; max-width: none; padding: 
 .wb-tree-branch[open] > summary::before { transform: rotate(45deg); }
 .wb-tree-branch > .wb-tree-branch { margin-left: 12px; padding-left: 8px; border-left: 1px solid #d8e0ea; }
 .wb-tree-branch > .wb-tree-branch > summary { font-size: 12px; color: #526278; }
+.wb-tree-branch > .wb-cluster-member > summary { font-size: 13px; color: #142033; }
 .wb-tree-check { display: flex; align-items: baseline; gap: 8px; width: 100%; padding: 10px 8px; min-height: 40px; margin: 2px 0; text-align: left; font-size: 12px; line-height: 1.45; font-weight: 500; background: transparent; border: 1px solid transparent; border-radius: 5px; overflow-wrap: anywhere; }
 .wb-tree-check:hover, .wb-tree-branch > summary:hover { background: #e8eef6; }
 .wb-tree-check.selected { background: #ffe9f1; color: #a50040; border-color: #f4c1d3; }

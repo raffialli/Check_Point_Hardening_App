@@ -75,6 +75,15 @@ export function orderNavigationScopes(scopes) {
   return ordered;
 }
 
+export function clusterParentScope(scopes, item) {
+  const member = scopePresentation(item.title, item.section);
+  if (!member.parent) return null;
+  return scopes.find(scope => {
+    const parent = scopePresentation(scope.title, scope.section);
+    return scope.section === item.section && parent.kind === 'cluster' && parent.name === member.parent;
+  }) || null;
+}
+
 function record(card) {
   const badges = card.querySelectorAll(":scope > summary .badge");
   const status = [...(badges[0]?.classList || [])].find((name) => name !== "badge") || "unknown";
@@ -259,9 +268,11 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
       });
       return node;
     };
+    const objects = new Map();
     for (const item of orderNavigationScopes(domain.scopes)) {
       const itemEntries = entries.map((entry, i) => ({...entry, index: i})).filter(entry => entry.scope === item);
-      if (!itemEntries.length) continue;
+      const hasMatchingMember = entries.some(entry => clusterParentScope(domain.scopes, entry.scope) === item);
+      if (!itemEntries.length && !hasMatchingMember) continue;
       if (item.section !== section) { section = item.section; navList.append(element("h3", "wb-nav-section", section)); }
       const presentation = scopePresentation(item.title, item.section);
       if (view !== 'categories' && item.checks.length === 1 && item.checks[0].id === 'policy.gateway-object-status') {
@@ -275,9 +286,13 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
         navList.append(button);
         continue;
       }
-      const object = branch(branchKey(item), presentation.name, presentation.kind, chosen?.scope === item);
+      const selectedChild = chosen && clusterParentScope(domain.scopes, chosen.scope) === item;
+      const object = branch(branchKey(item), presentation.name, presentation.kind, chosen?.scope === item || Boolean(selectedChild));
       if (presentation.subtitle) object.querySelector('summary span').append(element('small', 'wb-object-type', presentation.subtitle));
-      navList.append(object);
+      const parentObject = objects.get(clusterParentScope(domain.scopes, item));
+      if (parentObject) object.classList.add('wb-cluster-member');
+      (parentObject || navList).append(object);
+      objects.set(item, object);
       const categories = new Map();
       for (const entry of itemEntries) {
         let parent = object;
