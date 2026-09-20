@@ -14,6 +14,12 @@ const checks = [
   {id:'gaia.ntp', title:'Configure Reliable Time Synchronization', category:'Gaia OS Hardening', status:'pass', severity:'medium', evidenceTable:{columns:['Name','State'],rows:rows.map(({Name})=>({Name,State:'Configured'}))}},
   {id:'gaia.lom', title:'Restrict Out-Of-Band Management', category:'Gaia OS Hardening', status:'manual', severity:'medium', recommendation:'Verify out-of-band access is restricted to approved administrators.',evidenceTable:{columns:['Name','State'],rows:rows.map(({Name})=>({Name,State:'Manual verification'}))}}
 ];
+checks[1].evidenceTables = [{title:'Policy Package: Synthetic Standard / Access Policy: Network',
+  columns:['Rule #','Disabled','Rule name','Source','Destination','Services','Action','Log'],
+  rows:[
+    {'Rule #':'118',Disabled:'', 'Rule name':'Synthetic management control connections',Source:'Approved_Management_Hosts, Monitoring_Collectors, Administrative_Jump_Servers',Destination:'Synthetic_Management_Server, Synthetic_Cluster_Members',Services:'Management_Service_Group, TCP_443, TCP_18190',Action:'Accept',Log:'Log'},
+    {'Rule #':'119',Disabled:'Disabled', 'Rule name':'Synthetic directory integration review',Source:'Synthetic_Cluster_Members',Destination:'Directory_Services_Test_Group, Authentication_Test_Host',Services:'LDAP, RADIUS, TACACSPlus',Action:'Accept',Log:'Log'}
+  ]}];
 const scan = { scannedAt:new Date().toISOString(), managementObjectName:'MGMT-LAB', gatewayTargets:['EDGE-01','EDGE-02'], checks, summary:{'needs-review':3,'remediation-required':1,manual:2,pass:2}, commandLog:[],commandResults:{} };
 let allDomains = false;
 createServer(async(req,res)=>{

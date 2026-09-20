@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { statusBucket, matchesFinding } from '../public/workbench.js';
+import { statusBucket, matchesFinding, scopePresentation, orderNavigationScopes } from '../public/workbench.js';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { checkOwnerScope, canonicalGatewayName, gatewayIdentityKey, displayCellValue, gatewayTargetsForCheck } from '../public/finding-model.js';
@@ -10,6 +10,21 @@ test('workbench preserves every status distinction and combines action aliases',
   assert.equal(statusBucket('remediation-recommended'), 'action');
   assert.equal(statusBucket('needs-review'), 'review');
   for (const status of ['manual', 'unknown', 'pass', 'reviewed', 'informational']) assert.equal(statusBucket(status), status);
+});
+
+test('navigation separates object names from cluster relationship labels', () => {
+  assert.deepEqual(scopePresentation('BRANCH-CL (Cluster Object)', 'Gateways and clusters'), {name:'BRANCH-CL',subtitle:'Cluster object',kind:'cluster'});
+  assert.deepEqual(scopePresentation('BRANCH-A (cluster member of: BRANCH-CL)', 'Gateways and clusters'), {name:'BRANCH-A',subtitle:'Member of BRANCH-CL',kind:'gateway',parent:'BRANCH-CL'});
+  assert.equal(scopePresentation('MGMT-LAB','Policy and Management').kind,'management');
+});
+
+test('cluster members follow their parent without dropping standalone or orphaned targets', () => {
+  const scopes = ['Gateway Object SIC Status','BRANCH-A (cluster member of: BRANCH-CL)','BRANCH-CL (Cluster Object)','EDGE-01','MEMBER (cluster member of: unavailable)'].map(title=>({title,section:'Gateways and clusters'}));
+  const ordered = orderNavigationScopes(scopes);
+  assert.equal(ordered.length, scopes.length);
+  assert.equal(ordered[1].title,'BRANCH-CL (Cluster Object)');
+  assert.equal(ordered[2].title,'BRANCH-A (cluster member of: BRANCH-CL)');
+  assert.equal(ordered[4].title,'MEMBER (cluster member of: unavailable)');
 });
 
 test('all-domain hierarchy uses the selected domain inventory, not root metadata', async () => {

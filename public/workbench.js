@@ -16,6 +16,48 @@ function element(tag, className, text) {
   return node;
 }
 
+// Small, neutral UI symbols—not a vendor logo. Kept local for offline use.
+function icon(kind) {
+  const paths = {
+    gateway: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 6.5h.01M10 6.5h.01M7 14h10"/>',
+    management: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 11h6M9 15h2M9 18h2"/>',
+    cluster: '<rect x="7" y="3" width="14" height="12" rx="2"/><path d="M7 7h14M3 9v10a2 2 0 0 0 2 2h12"/>',
+    category: '<path d="M4 5h16M4 12h16M4 19h16"/>',
+    chevron: '<path d="m9 5 7 7-7 7"/>',
+    expand: '<path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/>'
+  };
+  const node = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  node.setAttribute('viewBox', '0 0 24 24'); node.setAttribute('aria-hidden', 'true');
+  node.setAttribute('class', 'wb-icon'); node.setAttribute('fill', 'none');
+  node.setAttribute('stroke', 'currentColor'); node.setAttribute('stroke-width', '1.5');
+  node.setAttribute('stroke-linecap', 'round'); node.setAttribute('stroke-linejoin', 'round');
+  node.innerHTML = paths[kind] || paths.gateway;
+  return node;
+}
+
+export function scopePresentation(title, section) {
+  const member = title.match(/^(.*?) \(cluster member of: (.*)\)$/i);
+  if (member) return { name: member[1], subtitle: `Member of ${member[2]}`, kind: 'gateway', parent: member[2] };
+  if (title.endsWith(' (Cluster Object)')) return { name: title.slice(0, -17), subtitle: 'Cluster object', kind: 'cluster' };
+  if (section === 'Categories') return { name: title, subtitle: '', kind: 'category' };
+  return { name: title, subtitle: '', kind: section === 'Policy and Management' ? 'management' : 'gateway' };
+}
+
+export function orderNavigationScopes(scopes) {
+  const ordered = [];
+  for (const scope of scopes) {
+    const current = scopePresentation(scope.title, scope.section);
+    const hasParent = current.parent && scopes.some(item => {
+      const parent = scopePresentation(item.title, item.section);
+      return item.section === scope.section && parent.kind === 'cluster' && parent.name === current.parent;
+    });
+    if (hasParent) continue;
+    ordered.push(scope);
+    if (current.kind === 'cluster') ordered.push(...scopes.filter(item => item.section === scope.section && scopePresentation(item.title, item.section).parent === current.name));
+  }
+  return ordered;
+}
+
 function record(card) {
   const badges = card.querySelectorAll(":scope > summary .badge");
   const status = [...(badges[0]?.classList || [])].find((name) => name !== "badge") || "unknown";
@@ -50,7 +92,7 @@ function scopesFrom(root, view) {
   return scopes;
 }
 
-export function mountWorkbench(host, { view = "hierarchy", sessionKey = "" } = {}) {
+export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", viewSwitch } = {}) {
   if (saved.session !== sessionKey) saved = { session: sessionKey, domain: "", scope: "", check: "", query: "", status: "", severity: "" };
   const domainNodes = [...host.querySelectorAll(".mora-domain-group")];
   const domains = domainNodes.length ? domainNodes.map((node, index) => ({
@@ -60,6 +102,7 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "" } = {
   // Hold the original nodes (and listeners) before replacing their wrappers.
   host.replaceChildren();
   host.classList.add("workbench");
+  host.parentElement.classList.add('has-workbench');
   const nav = element("nav", "wb-nav");
   nav.setAttribute("aria-label", "Scan objects");
   const center = element("section", "wb-findings");
@@ -67,6 +110,7 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "" } = {
   detail.setAttribute("aria-label", "Selected check evidence");
   const navList = element("div", "wb-nav-list");
   const heading = element("h2", "wb-scope-title");
+  const breadcrumb = element('p', 'wb-breadcrumb');
   const description = element("p", "wb-scope-description");
   const filters = element("div", "wb-filters");
   const query = element("input");
@@ -82,8 +126,11 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "" } = {
   filters.append(query, status, severity);
   const count = element("p", "wb-count"); count.setAttribute("role", "status");
   const list = element("div", "wb-check-list");
-  center.append(heading, description, filters, count, list);
-  nav.append(element("h2", "wb-nav-title", view === "hierarchy" ? "Infrastructure" : "Categories"));
+  const columns = element('div', 'wb-list-columns'); columns.setAttribute('aria-hidden', 'true');
+  columns.append(element('span', '', 'Check'), element('span', '', 'Status'), element('span', '', 'Severity'), element('span'));
+  center.append(breadcrumb, heading, description, filters, count, columns, list);
+  if (viewSwitch) nav.append(viewSwitch);
+  else nav.append(element("h2", "wb-nav-title", view === "hierarchy" ? "Infrastructure" : "Categories"));
   let domain = domains.find((item) => item.key === saved.domain) || domains[0];
   let scope;
   const showCheck = (check) => {
@@ -95,9 +142,24 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "" } = {
       button.setAttribute("aria-pressed", String(selected));
     });
     if (!check) { detail.append(element("p", "wb-empty", "Select a check to review its evidence.")); return; }
-    const context = element("p", "wb-evidence-context", `${scope.title} / ${check.category}`);
+    const context = element("p", "wb-evidence-context", `${scopePresentation(scope.title, scope.section).name} / ${check.category}`);
+    const toolbar = element('div', 'wb-evidence-toolbar');
+    const expand = element('button', 'wb-expand'); expand.type = 'button';
+    const updateExpand = () => { const expanded = host.classList.contains('evidence-expanded'); expand.replaceChildren(icon('expand'), element('span', '', expanded ? 'Back to checks' : 'Expand evidence')); expand.setAttribute('aria-expanded', String(expanded)); };
+    expand.addEventListener('click', () => { if (host.inert) return; host.classList.toggle('evidence-expanded'); updateExpand(); });
+    updateExpand(); toolbar.append(context, expand);
     check.card.open = true;
-    detail.append(context, check.card);
+    check.card.querySelectorAll('.evidence-table-wrap').forEach((wrap) => {
+      wrap.tabIndex = 0; wrap.setAttribute('role', 'region');
+      wrap.setAttribute('aria-label', `${wrap.querySelector('.evidence-title')?.textContent || 'Evidence'} — scroll horizontally for more columns`);
+      if (wrap.querySelectorAll('thead th').length > 4 && !wrap.classList.contains('wb-wide-table')) {
+        const hint = element('p', 'wb-table-hint', 'Wide table: scroll horizontally to view all columns.');
+        wrap.before(hint);
+        // Keep a marker on the persistent card wrapper to avoid duplicate hints.
+        wrap.classList.add('wb-wide-table');
+      }
+    });
+    detail.append(toolbar, check.card);
   };
   const showList = () => {
     list.replaceChildren();
@@ -108,9 +170,11 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "" } = {
       if (category !== check.category) { category = check.category; list.append(element("h3", "wb-category", category)); }
       const button = element("button", "wb-check-row"); button.type = "button"; button.dataset.checkId = check.id;
       const title = element("span", "wb-check-title", check.title);
-      const meta = element("span", "wb-check-meta");
-      meta.append(element("span", `wb-status ${statusBucket(check.status)}`, check.statusText), element("span", `wb-severity ${check.severity}`, check.severity));
-      button.append(title, meta); button.addEventListener("click", () => {
+      const bucket = statusBucket(check.status);
+      const statusText = {action:'Action needed', review:'Review'}[bucket] || check.statusText;
+      const badge = element('span', `wb-status ${bucket}`, statusText); badge.title = check.statusText;
+      button.setAttribute('aria-label', `${check.title} — ${check.statusText}, ${check.severity}`);
+      button.append(title, badge, element('span', `wb-severity ${check.severity}`, check.severity), icon('chevron')); button.addEventListener("click", () => {
         if (host.inert) return;
         showCheck(check);
         if (matchMedia("(max-width: 900px)").matches) { detail.tabIndex = -1; detail.focus(); }
@@ -123,17 +187,24 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "" } = {
     showCheck(checks.find((check) => check.id === saved.check) || checks[0]);
   };
   const chooseScope = (next) => {
+    host.classList.remove('evidence-expanded');
     scope = next; saved.scope = scope?.key || "";
-    heading.textContent = scope?.title || domain.title;
-    description.textContent = scope?.description || "Review findings and their supporting evidence.";
+    const presentation = scope ? scopePresentation(scope.title, scope.section) : null;
+    heading.textContent = presentation?.name || domain.title;
+    breadcrumb.textContent = scope?.section || domain.title;
+    description.textContent = presentation?.subtitle || scope?.description || "Review findings and their supporting evidence.";
     navList.querySelectorAll("button").forEach((button) => { const active = button.dataset.scope === saved.scope; button.classList.toggle("selected", active); button.setAttribute("aria-pressed", String(active)); });
     showList();
   };
   const showDomain = () => {
     saved.domain = domain.key; navList.replaceChildren(); let section = "";
-    for (const item of domain.scopes) {
+    for (const item of orderNavigationScopes(domain.scopes)) {
       if (item.section !== section) { section = item.section; navList.append(element("h3", "wb-nav-section", section)); }
-      const button = element("button", "wb-object", item.title); button.type = "button"; button.dataset.scope = item.key;
+      const presentation = scopePresentation(item.title, item.section);
+      const button = element("button", `wb-object${presentation.parent ? ' wb-member' : ''}`); button.type = "button"; button.dataset.scope = item.key;
+      const label = element('span', 'wb-object-label'); label.append(element('span', 'wb-object-name', presentation.name));
+      if (presentation.subtitle) label.append(element('small', 'wb-object-type', presentation.subtitle));
+      button.append(icon(presentation.kind), label);
       button.append(element("span", "wb-object-count", String(item.checks.length)));
       button.addEventListener("click", () => { if (!host.inert) chooseScope(item); }); navList.append(button);
     }

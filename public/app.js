@@ -1709,7 +1709,7 @@ function renderChecks() {
   });
   // Move the existing, fully bound evidence cards into the workbench. No scan
   // payload or remediation target is rebuilt by the presentation layer.
-  mountWorkbench(checksList, { view: resultsView, sessionKey: sessionId });
+  mountWorkbench(checksList, { view: resultsView, sessionKey: sessionId, viewSwitch: hierarchyViewButton.parentElement });
 }
 
 hierarchyViewButton.addEventListener("click", () => {
