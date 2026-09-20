@@ -181,9 +181,10 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
       }
       parent = parent.parentElement;
     }
-    const row = button.getBoundingClientRect(), bounds = navList.getBoundingClientRect();
-    if (row.top < bounds.top) navList.scrollTop -= bounds.top - row.top;
-    else if (row.bottom > bounds.bottom) navList.scrollTop += row.bottom - bounds.bottom;
+    const row = button.getBoundingClientRect();
+    if (!matchMedia('(max-width: 760px)').matches && (row.top < 12 || row.bottom > innerHeight)) {
+      button.scrollIntoView({block: 'nearest'});
+    }
   };
   const showCheck = (index, {reveal = false, mobile = false} = {}) => {
     selectedIndex = index;

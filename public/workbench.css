@@ -141,9 +141,10 @@ body:has(#workspace:not(.hidden)) .app { width: 100%; max-width: none; padding: 
 .workspace .summary-card.informational .summary-value { color: #175ca4; }
 
 /* Object → section → check navigation with one independently scrolling document. */
-.workbench { grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: calc(100dvh - 245px); min-height: 460px; }
-.workbench .wb-nav { position: static; grid-row: 1; width: 340px; min-width: 280px; max-width: 480px; height: 100%; min-height: 0; max-height: none; box-sizing: border-box; resize: horizontal; padding-bottom: 12px; }
-.workbench .wb-detail { display: block; grid-column: 2; grid-row: 1; overflow-y: auto; min-height: 0; padding: 0 22px 22px; }
+.workbench { grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto; height: auto; min-height: 460px; }
+#hardeningChecksPanel { overflow: clip; }
+.workbench .wb-nav { position: static; grid-row: 1; width: 340px; min-width: 280px; max-width: 480px; height: auto; min-height: 100%; max-height: none; box-sizing: border-box; resize: horizontal; padding-bottom: 12px; }
+.workbench .wb-detail { display: block; grid-column: 2; grid-row: 1; position: sticky; top: 12px; align-self: start; height: max(360px, calc(100dvh - 245px)); max-height: calc(100dvh - 24px); box-sizing: border-box; overflow-y: auto; min-height: 0; padding: 0 22px 22px; }
 .workbench .wb-evidence-toolbar { position: sticky; top: 0; z-index: 1; background: white; padding: 16px 0; margin: 0 0 20px; border-bottom: 1px solid var(--line); align-items: center; flex-wrap: wrap; }
 .wb-evidence-context { flex: 1 1 220px; }
 .wb-pager { display: flex; align-items: center; gap: 10px; margin-left: auto; }
@@ -154,7 +155,7 @@ body:has(#workspace:not(.hidden)) .app { width: 100%; max-width: none; padding: 
 .wb-nav .wb-filters input { grid-column: 1 / -1; }
 .wb-nav .wb-count { margin: 10px 4px; }
 .wb-nav .wb-nav-section { margin: 20px 4px 10px; }
-.wb-nav .wb-nav-list { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
+.wb-nav .wb-nav-list { flex: 0 0 auto; overflow: visible; padding-right: 4px; }
 .wb-tree-branch { margin: 4px 0; border: 0; border-radius: 0; background: transparent; }
 .wb-tree-branch > summary { display: flex; gap: 8px; align-items: center; padding: 10px 4px; min-height: 40px; box-sizing: border-box; cursor: pointer; list-style: none; font-size: 13px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; color: #142033; }
 .wb-tree-branch > summary::-webkit-details-marker { display: none; }
@@ -174,10 +175,10 @@ body:has(#workspace:not(.hidden)) .app { width: 100%; max-width: none; padding: 
 .workbench .wb-back { display: none; }
 @media (max-width: 1000px) and (min-width: 761px) { .workbench .wb-nav { width: 300px; max-width: 380px; } }
 @media (max-width: 760px) {
-  .workbench { display: block; height: calc(100dvh - 24px); min-height: 420px; }
+  .workbench { display: block; height: auto; min-height: 420px; }
   .workbench .wb-nav { width: 100%; min-width: 0; max-width: none; resize: none; border: 0; }
   .workbench:not(.show-evidence) .wb-detail { display: none; }
   .workbench.show-evidence .wb-nav { display: none; }
-  .workbench.show-evidence .wb-detail { height: 100%; box-sizing: border-box; padding-inline: 16px; }
+  .workbench.show-evidence .wb-detail { position: static; height: calc(100dvh - 24px); box-sizing: border-box; padding-inline: 16px; }
   .workbench .wb-back { display: inline-flex; }
 }

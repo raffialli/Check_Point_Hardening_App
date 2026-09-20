@@ -1,5 +1,5 @@
 import { checkOwnerScope, canonicalGatewayName, gatewayIdentityKey, targetNameFromRow, displayCellValue, gatewayTargetsForCheck, collectionMessage } from "./finding-model.js";
-import { mountWorkbench, summarizeFindings } from "./workbench.js?v=tree-1";
+import { mountWorkbench, summarizeFindings } from "./workbench.js?v=tree-2";
 let sessionId = "";
 let hardeningScan = null;
 const openCheckGroups = new Set();
