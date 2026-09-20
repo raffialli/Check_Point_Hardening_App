@@ -7,8 +7,11 @@ engagements/
 reports/
 exports/
 screenshots/
-.impeccable/build/
-.impeccable/review/
+# Local design and agent context (not needed to run the app)
+/.impeccable/
+/DESIGN.md
+/PRODUCT.md
+/docs/workbench-direction.md
 *.log
 *.tmp
 *.pyc
@@ -16,5 +19,7 @@ __pycache__/
 .env
 .env.*
 !.env.example
-check-point-debug-log-*.json
-check-point-best-practices-hardening-report*.pdf
+# Generated evidence: includes customer prefixes, layouts and download suffixes.
+*check-point-debug-log-*.json
+*hardening-report*.pdf
+*hardening-report*.zip
