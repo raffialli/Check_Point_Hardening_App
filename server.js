@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import { isIP } from "node:net";
 import JSZip from "jszip";
 import { collectPages, scopedCommandKey, collectionOutcome } from "./lib/collection.js";
+import { pollScriptTasks } from "./lib/task-polling.js";
 import { operationContext, beginOperation, finishOperation, assertNotCancelled, trackRequest } from "./lib/operations.js";
 import { checkOwnerScope, withFindingIdentity } from "./public/finding-model.js";
 const STANDARD_API_CONCURRENCY = positiveIntegerEnv("API_CONCURRENCY", 10);
@@ -24,7 +25,7 @@ const RUN_SCRIPT_CONCURRENCY = positiveIntegerEnv("RUN_SCRIPT_CONCURRENCY", 8);
 const LARGE_ENV_RUN_SCRIPT_CONCURRENCY = positiveIntegerEnv("LARGE_ENV_RUN_SCRIPT_CONCURRENCY", 3);
 const LARGE_ENV_API_CONCURRENCY = positiveIntegerEnv("LARGE_ENV_API_CONCURRENCY", 10);
 const LARGE_ENV_TASK_POLL_INTERVAL_MS = positiveIntegerEnv("LARGE_ENV_TASK_POLL_INTERVAL_MS", 1250);
-const TASK_POLL_ATTEMPTS = positiveIntegerEnv("TASK_POLL_ATTEMPTS", 20);
+const TASK_POLL_TIMEOUT_MS = positiveIntegerEnv("TASK_POLL_TIMEOUT_MS", 180_000);
 const TASK_POLL_INTERVAL_MS = positiveIntegerEnv("TASK_POLL_INTERVAL_MS", 1000);
 const TASK_POLL_MAX_INTERVAL_MS = positiveIntegerEnv("TASK_POLL_MAX_INTERVAL_MS", 4000);
 const CP_API_TIMEOUT_MS = positiveIntegerEnv("CP_API_TIMEOUT_MS", 45_000);
@@ -117,6 +118,7 @@ function compactLookupErrors(errors = []) {
     const message = rawError?.message || rawError?.error || rawError?.code || String(rawError || "");
     return {
       gateway: item?.gateway || "",
+      target: item?.target || "",
       group: item?.group || "",
       layer: item?.layer || "",
       ruleNumber: item?.ruleNumber || "",
@@ -3947,36 +3949,42 @@ async function collectGaiaFullScanEvidence(session, gatewaysResult, gatewaysAndS
   return {
     allowedHostAccess: {
       ok: errors.length === 0,
+      error: errors.length ? compactLookupErrors(errors) : undefined,
       command: "run-script/show-allowed-client",
       evidenceTables: allowedClientTables,
       errors
     },
     administratorSettings: {
       ok: errors.length === 0,
+      error: errors.length ? compactLookupErrors(errors) : undefined,
       command: "run-script/show-users",
       evidenceTables: adminTables,
       errors
     },
     passwordPolicy: {
       ok: errors.length === 0,
+      error: errors.length ? compactLookupErrors(errors) : undefined,
       command: "run-script/show-password-controls",
       evidenceTables: passwordTables,
       errors
     },
     snmpMonitoring: {
       ok: errors.length === 0,
+      error: errors.length ? compactLookupErrors(errors) : undefined,
       command: "run-script/show-snmp",
       evidenceTables: snmpTables,
       errors
     },
     systemLogging: {
       ok: errors.length === 0,
+      error: errors.length ? compactLookupErrors(errors) : undefined,
       command: "run-script/show-syslog-cplogs/show-syslog-log-remote-addresses",
       rows: syslogRows,
       errors
     },
     securityFeatureUsage: {
       ok: licenseErrors.length === 0,
+      error: licenseErrors.length ? compactLookupErrors(licenseErrors) : undefined,
       command: "run-script/show-license-status",
       rows: licenseRows,
       evidenceTables: licenseTables,
@@ -3984,12 +3992,14 @@ async function collectGaiaFullScanEvidence(session, gatewaysResult, gatewaysAndS
     },
     sizingStatistics: {
       ok: sizingErrors.length === 0,
+      error: sizingErrors.length ? compactLookupErrors(sizingErrors) : undefined,
       command: "run-script/cpstat-os-memory-cpu",
       rows: sizingRows,
       errors: sizingErrors
     },
     managementExternalSyslog: {
       ok: managementSyslogErrors.length === 0,
+      error: managementSyslogErrors.length ? compactLookupErrors(managementSyslogErrors) : undefined,
       command: "run-script/show-syslog-log-remote-addresses",
       rows: managementSyslogRows,
       errors: managementSyslogErrors
@@ -6095,7 +6105,7 @@ async function runScriptWithTaskDetails(session, body) {
 
 async function runScriptWithTaskDetailsUnqueued(session, body) {
   const runResult = await tryCommand(session, "run-script", body);
-  if (!runResult.ok || statusDescriptionText(runResult)) {
+  if (!runResult.ok) {
     return runResult;
   }
 
@@ -6104,27 +6114,12 @@ async function runScriptWithTaskDetailsUnqueued(session, body) {
     return runResult;
   }
 
-  let lastTaskResult = null;
   const baseInterval = session?.largeEnvironmentMode ? LARGE_ENV_TASK_POLL_INTERVAL_MS : TASK_POLL_INTERVAL_MS;
-  const pollingStartedAt = Date.now();
-  const maxPollingMs = baseInterval * TASK_POLL_ATTEMPTS;
-  for (let attempt = 0; attempt < TASK_POLL_ATTEMPTS; attempt += 1) {
-    const remainingMs = maxPollingMs - (Date.now() - pollingStartedAt);
-    if (remainingMs <= 0) break;
-    const pollDelay = Math.min(remainingMs, TASK_POLL_MAX_INTERVAL_MS, baseInterval * (attempt + 1));
-    await sleep(pollDelay);
-    const taskResults = await Promise.all(taskIds.map((taskId) => tryCommand(session, "show-task", {
-      "task-id": taskId,
-      "details-level": "full"
-    })));
-    const okResults = taskResults.filter((result) => result.ok);
-    const resultWithOutput = okResults.find((result) => statusDescriptionText(result));
-    if (resultWithOutput) {
-      return resultWithOutput;
-    }
-    lastTaskResult = okResults[0] || taskResults[0] || lastTaskResult;
-  }
-  return lastTaskResult || runResult;
+  return pollScriptTasks({initial: runResult, taskIds, targets: body.targets || [],
+    timeoutMs: TASK_POLL_TIMEOUT_MS, intervalMs: baseInterval, maxIntervalMs: TASK_POLL_MAX_INTERVAL_MS,
+    sleep, checkCancelled: () => assertNotCancelled(operationContext.getStore()?.operation),
+    request: taskId => tryCommand(session, "show-task", {"task-id": taskId, "details-level": "full"})
+  });
 }
 
 function mdsRunScriptSession(session, target) {

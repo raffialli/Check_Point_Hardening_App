@@ -82,3 +82,13 @@ Docker/package_docker_image.sh
 - Keep engagement artifacts under `customer-data/`, `engagements/`, `reports/`, `exports/`, `screenshots/`, or `output/`; all are excluded from Git and Docker build contexts.
 - Store any intentionally exported artifact in the approved engagement location.
 - Stop the Node process or container after use to clear in-memory session data.
+# Script task polling
+
+Asynchronous `run-script` tasks are polled until every returned task completes.
+`TASK_POLL_TIMEOUT_MS` defaults to `180000` (three minutes per script), independent
+of polling intervals. Set it higher for slow Gaia collections if needed. This
+replaces the former `TASK_POLL_ATTEMPTS` limit. Normal and Large Environment scans
+share the deadline; their existing polling intervals and concurrency limits remain.
+A poll request already in flight is still subject to the API request timeout.
+Timeouts do not resubmit or cancel the remote script. Debug results include the
+affected target and an explicit timeout message instead of only a lookup count.
