@@ -223,13 +223,16 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
       host.classList.add('show-evidence');
       detail.focus({preventScroll: true}); host.scrollIntoView({block: 'start'});
     }
+    if (reveal || mobile) detail.scrollIntoView({block: 'start'});
   };
   previous.addEventListener('click', () => { if (!host.inert && selectedIndex > 0) showCheck(selectedIndex - 1, {reveal: true}); });
   next.addEventListener('click', () => { if (!host.inert && selectedIndex < entries.length - 1) showCheck(selectedIndex + 1, {reveal: true}); });
   back.addEventListener('click', () => {
     if (host.inert) return;
     host.classList.remove('show-evidence');
-    navList.querySelector('.selected')?.focus({preventScroll: true});
+    const selected = navList.querySelector('.selected');
+    selected?.focus({preventScroll: true});
+    selected?.scrollIntoView({block: 'nearest'});
   });
   const showDomain = () => {
     saved.domain = domain.key;

@@ -126,12 +126,6 @@ body:has(#workspace:not(.hidden)) .app { width: 100%; max-width: none; padding: 
 .workspace:has(.workbench:not(:empty)) .guide-panel { display: none; }
 @media (max-width: 560px) { .wb-nav { position: static; height: auto; min-height: 0; max-height: 380px; } }
 @media (max-width: 1199px) { .wb-check-row, .wb-list-columns { grid-template-columns: minmax(0,1fr) 88px 50px 12px; gap: 6px; padding-inline: 8px; } }
-@media (max-width: 760px), (max-height: 650px) {
-  .workbench:not(.show-evidence) .wb-detail { display: none; }
-  .workbench.show-evidence .wb-findings { display: none; }
-  .wb-back { display: inline-flex; align-items: center; }
-  .wb-check-list { max-height: 420px; }
-}
 @media (max-width: 560px) { .show-evidence .wb-nav { display: none; } .wb-evidence-toolbar { flex-wrap: wrap; } .wb-list-columns { display: none; } .wb-check-row { grid-template-columns: 1fr auto 16px; row-gap: 8px; padding: 14px 10px; } .wb-check-title { grid-column: 1 / -1; } }
 .workspace .summary-card.action .summary-value { color: #b42335; }
 .workspace .summary-card.review .summary-value { color: #866000; }
@@ -140,11 +134,11 @@ body:has(#workspace:not(.hidden)) .app { width: 100%; max-width: none; padding: 
 .workspace .summary-card.unknown .summary-value { color: #526278; }
 .workspace .summary-card.informational .summary-value { color: #175ca4; }
 
-/* Object → section → check navigation with one independently scrolling document. */
+/* Object → section → check navigation; evidence uses natural page scrolling. */
 .workbench { grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto; height: auto; min-height: 460px; }
 #hardeningChecksPanel { overflow: clip; }
 .workbench .wb-nav { position: static; grid-row: 1; width: 340px; min-width: 280px; max-width: 480px; height: auto; min-height: 100%; max-height: none; box-sizing: border-box; resize: horizontal; padding-bottom: 12px; }
-.workbench .wb-detail { display: block; grid-column: 2; grid-row: 1; position: sticky; top: 12px; align-self: start; height: max(360px, calc(100dvh - 245px)); max-height: calc(100dvh - 24px); box-sizing: border-box; overflow-y: auto; min-height: 0; padding: 0 22px 22px; }
+.workbench .wb-detail { display: block; grid-column: 2; grid-row: 1; position: static; align-self: start; height: auto; max-height: none; box-sizing: border-box; overflow: visible; min-height: 0; padding: 0 22px 22px; }
 .workbench .wb-evidence-toolbar { position: sticky; top: 0; z-index: 1; background: white; padding: 16px 0; margin: 0 0 20px; border-bottom: 1px solid var(--line); align-items: center; flex-wrap: wrap; }
 .wb-evidence-context { flex: 1 1 220px; }
 .wb-pager { display: flex; align-items: center; gap: 10px; margin-left: auto; }
@@ -179,6 +173,6 @@ body:has(#workspace:not(.hidden)) .app { width: 100%; max-width: none; padding: 
   .workbench .wb-nav { width: 100%; min-width: 0; max-width: none; resize: none; border: 0; }
   .workbench:not(.show-evidence) .wb-detail { display: none; }
   .workbench.show-evidence .wb-nav { display: none; }
-  .workbench.show-evidence .wb-detail { position: static; height: calc(100dvh - 24px); box-sizing: border-box; padding-inline: 16px; }
+  .workbench.show-evidence .wb-detail { height: auto; max-height: none; box-sizing: border-box; padding-inline: 16px; }
   .workbench .wb-back { display: inline-flex; }
 }
