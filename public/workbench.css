@@ -160,6 +160,8 @@ body:has(#workspace:not(.hidden)) .app { width: 100%; max-width: none; padding: 
 .wb-tree-check { display: flex; align-items: baseline; gap: 8px; width: 100%; padding: 10px 8px; min-height: 40px; margin: 2px 0; text-align: left; font-size: 12px; line-height: 1.45; font-weight: 500; background: transparent; border: 1px solid transparent; border-radius: 5px; overflow-wrap: anywhere; }
 .wb-tree-check:hover, .wb-tree-branch > summary:hover { background: #e8eef6; }
 .wb-tree-check.selected { background: #ffe9f1; color: #a50040; border-color: #f4c1d3; }
+.wb-direct-check { align-items: center; padding: 10px 4px; font-size: 13px; font-weight: 600; }
+.wb-direct-check .wb-icon { color: #526278; }
 .wb-state-mark { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 8px; background: #526278; }
 .wb-state-mark.action { background: #b42335; }
 .wb-state-mark.review { background: #866000; }

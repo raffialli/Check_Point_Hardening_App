@@ -34,6 +34,7 @@ function element(tag, className, text) {
 // Small, neutral UI symbols—not a vendor logo. Kept local for offline use.
 function icon(kind) {
   const paths = {
+    information: '<circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><circle cx="12" cy="17" r=".7"/>',
     gateway: '<rect x="2" y="4" width="20" height="16" rx="1"/><path d="M2 9h20M2 15h20M8 4v5m8-5v5m-4 0v6m-4 0v5m8-5v5"/>',
     management: '<rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><circle cx="7" cy="6.5" r=".75"/><circle cx="7" cy="17.5" r=".75"/><path d="M12 6.5h5M12 17.5h5M6 10v4m12-4v4"/>',
     cluster: '<rect x="6" y="3" width="16" height="14" rx="1"/><path d="M6 8h16M6 12h16M14 3v5m-4 0v4m8-4v4m-4 0v5M2 7v14h16"/>',
@@ -263,6 +264,17 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
       if (!itemEntries.length) continue;
       if (item.section !== section) { section = item.section; navList.append(element("h3", "wb-nav-section", section)); }
       const presentation = scopePresentation(item.title, item.section);
+      if (view !== 'categories' && item.checks.length === 1 && item.checks[0].id === 'policy.gateway-object-status') {
+        const entry = itemEntries[0];
+        const button = element('button', 'wb-tree-check wb-direct-check');
+        button.type = 'button'; button.dataset.index = entry.index;
+        button.setAttribute('aria-controls', detail.id);
+        button.setAttribute('aria-label', `${entry.check.title}, ${entry.check.statusText}, ${entry.check.severity}`);
+        button.append(icon('information'), element('span', '', entry.check.title));
+        button.addEventListener('click', () => { if (!host.inert) showCheck(entry.index, {mobile: true}); });
+        navList.append(button);
+        continue;
+      }
       const object = branch(branchKey(item), presentation.name, presentation.kind, chosen?.scope === item);
       if (presentation.subtitle) object.querySelector('summary span').append(element('small', 'wb-object-type', presentation.subtitle));
       navList.append(object);
