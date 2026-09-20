@@ -1,0 +1,94 @@
+/* Independent, text-only identity. No external fonts or assets: works offline. */
+body:has(#workspace:not(.hidden)) .app { width: 100%; max-width: none; padding: 0; }
+.workspace { --muted: #526278; --danger: #b42335; padding: 0 24px 24px; gap: 10px; }
+.workspace .topbar { padding: 14px 18px; gap: 24px; align-items: center; border-radius: 0; border-width: 0 0 1px; }
+.workspace .title-stack.compact { font-size: 23px; line-height: 1.25; }
+.workspace .title-stack.compact span:last-child { font-size: 13px; margin-top: 4px; color: #b40047; }
+.workspace .topbar-description { font-size: 12px; margin: 9px 0 0; max-width: 65ch; color: var(--muted); }
+.workspace #connectionLabel { font-size: 12px; margin: 0 0 8px; letter-spacing: 0; text-transform: none; }
+.workspace .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: none; }
+.workspace .actions button, .export-menu > summary { font-size: 13px; padding: 11px 15px; min-height: 42px; border-radius: 6px; }
+.workspace .actions #logoutButton { width: auto; grid-column: auto; }
+.workspace .actions #scanButton { min-width: 0; }
+.workspace .primary { background: #ca004c; }
+.export-menu { position: relative; }
+.export-menu > summary { cursor: pointer; border: 1px solid var(--line); background: white; font-weight: 650; }
+.export-options { position: absolute; top: calc(100% + 8px); right: 0; width: 290px; z-index: 10; padding: 12px; background: white; border: 1px solid var(--line); border-radius: 6px; }
+.export-options button { width: 100%; margin-bottom: 8px; text-align: left; }
+.export-options p { margin: 4px; font-size: 12px; color: var(--muted); }
+.workspace .guide-panel { padding: 10px 16px; display: flex; align-items: center; margin-bottom: 0; border-radius: 6px; }
+.workspace .guide-panel { order: 2; }
+.workspace .api-collection-panel { order: 3; }
+.workspace > .log { order: 4; }
+.workspace .guide-panel h2 { display: none; }
+.workspace .guide-panel p, .workspace .guide-link { font-size: 12px; margin: 0; }
+.workspace .summary-grid { display: flex; flex-wrap: wrap; gap: 24px; padding: 14px 0; margin: 0; }
+.workspace .summary-card { min-height: 0; padding: 0; border: 0; background: transparent; display: flex; align-items: baseline; gap: 7px; }
+.workspace .summary-value { font-size: 21px; }
+.workspace .summary-label { font-size: 12px; text-transform: none; font-weight: 550; }
+#hardeningChecksPanel { padding: 0; overflow: hidden; border-radius: 6px; }
+#hardeningChecksPanel > .table-head { padding: 14px 18px; margin: 0; border-bottom: 1px solid var(--line); align-items: center; }
+#hardeningChecksPanel > .table-head h2 { font-size: 16px; margin: 0; }
+#hardeningChecksPanel > .table-head p { display: none; }
+.workspace .result-view-switch button { font-size: 12px; min-height: 36px; padding: 8px 12px; }
+.workspace #scanStatus { margin: 0; padding: 9px 18px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: #f8fafc; font-size: 12px; }
+.workspace #scanStatus dl { display: flex; flex-wrap: wrap; gap: 4px 8px; margin: 0; }
+.workspace #scanStatus dd { margin: 0 16px 0 0; }
+.workspace #scanStatus dt { font-weight: 500; }
+.workbench { display: grid; grid-template-columns: 225px minmax(300px, .95fr) minmax(360px, 1.3fr); gap: 0; min-height: 610px; }
+.workbench > * { min-width: 0; }
+.wb-nav { background: #f4f6fa; padding: 20px 12px; border-right: 1px solid var(--line); }
+.wb-nav-title { font-size: 15px; margin: 0 8px 18px; }
+.wb-nav-section { margin: 24px 8px 8px; font-size: 11px; color: #526278; text-transform: uppercase; letter-spacing: .04em; }
+.wb-object { width: 100%; display: flex; gap: 8px; justify-content: space-between; border: 1px solid transparent; background: transparent; padding: 10px 9px; font-size: 12px; text-align: left; border-radius: 5px; overflow-wrap: anywhere; }
+.wb-object.selected { background: #ffe9f1; color: #a50040; border-color: #f4c1d3; }
+.wb-object-count { color: #526278; font-variant-numeric: tabular-nums; }
+.wb-domain-label { font-size: 12px; margin: 0 8px 5px; display: block; }
+.wb-nav select { width: 100%; min-height: 40px; }
+.wb-findings { border-right: 1px solid var(--line); padding: 22px 16px; }
+.wb-scope-title { margin: 0 0 7px; font-size: 23px; line-height: 1.2; overflow-wrap: anywhere; }
+.wb-scope-description { font-size: 12px; color: var(--muted); margin: 0 0 20px; line-height: 1.5; }
+.wb-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.wb-filters input { grid-column: 1 / -1; }
+.wb-filters input, .wb-filters select { width: 100%; min-width: 0; font: inherit; font-size: 12px; min-height: 38px; padding: 8px; border: 1px solid #bac5d3; border-radius: 5px; background: white; }
+.wb-count { font-size: 12px; color: var(--muted); margin: 13px 0; }
+.wb-category { font-size: 12px; line-height: 1.5; margin: 23px 0 8px; color: #43516a; }
+.wb-check-row { display: block; width: 100%; padding: 14px 12px; text-align: left; background: white; border: 1px solid transparent; border-bottom-color: #e4e9ef; border-radius: 0; }
+.wb-check-row:hover, .wb-object:hover { background: #edf1f6; }
+.wb-check-row.selected { background: #fff0f5; border-color: #efb4cb; border-radius: 5px; }
+.wb-check-title { display: block; font-size: 13px; line-height: 1.45; font-weight: 650; }
+.wb-check-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-top: 8px; font-size: 11px; font-weight: 500; }
+.wb-status { color: #526278; }
+.wb-status.action { color: #b42335; }
+.wb-status.review { color: #866000; }
+.wb-status.pass { color: #217044; }
+.wb-severity { text-transform: capitalize; color: #526278; }
+.wb-severity.high { color: #a22a38; }
+.wb-detail { padding: 22px; background: white; overflow-wrap: anywhere; }
+.wb-evidence-context { color: var(--muted); font-size: 11px; margin: 0 0 18px; }
+.wb-detail .check-card { border: 0; border-radius: 0; margin: 0; }
+.wb-detail .check-card-summary { display: block; padding: 0; background: white; list-style: none; }
+.wb-detail .check-card-summary::before, .wb-detail .check-card-summary::marker, .wb-detail .check-card-summary::-webkit-details-marker { display: none; content: ''; }
+.wb-detail .check-card-head { display: block; }
+.wb-detail .check-card h4 { font-size: 21px; line-height: 1.35; color: #142033; }
+.wb-detail .badge-stack { justify-content: flex-start; margin: 14px 0; }
+.wb-detail .badge { font-size: 11px; }
+.wb-detail .check-card-body { padding: 16px 0 0; }
+.wb-detail .check-details { display: block; font-size: 13px; line-height: 1.65; }
+.wb-detail .check-details dt { margin-top: 18px; margin-bottom: 5px; font-size: 12px; }
+.wb-detail .check-details dd { margin: 0; }
+.wb-detail table { font-size: 12px; }
+.wb-detail th, .wb-detail td { padding: 10px; }
+.wb-detail button { font-size: 12px; white-space: normal; }
+.wb-detail .shared-finding-note { border-left-width: 1px; font-size: 12px; }
+.wb-empty { padding: 22px 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.workspace .api-collection-panel { margin-top: 16px; }
+.workspace :focus-visible { outline: 2px solid #a60041; outline-offset: 3px; }
+.workspace ::selection { background: #f8c8da; color: #142033; }
+.workspace input { caret-color: #a60041; }
+.workspace * { scrollbar-color: #aab7c8 #f4f6fa; scrollbar-width: thin; }
+@media (min-width: 1200px) { .wb-nav, .wb-findings, .wb-detail { max-height: calc(100vh - 310px); min-height: 550px; overflow-y: auto; } }
+@media (max-width: 1199px) { .workbench { grid-template-columns: 190px minmax(260px, 1fr) minmax(310px, 1.2fr); } .workspace { padding: 0 12px 20px; } .wb-detail { padding: 18px; } }
+@media (max-width: 900px) { .workbench { grid-template-columns: 190px minmax(0, 1fr); } .wb-detail { grid-column: 1 / -1; border-top: 1px solid var(--line); } .workspace .topbar { flex-wrap: wrap; } }
+@media (max-width: 560px) { .workbench { display: block; } .wb-nav { border-right: 0; border-bottom: 1px solid var(--line); max-height: 250px; overflow-y: auto; } .wb-findings { border-right: 0; } .workspace .topbar { display: block; } .workspace .actions { margin-top: 16px; } .workspace .summary-grid { gap: 12px; } .workspace .summary-label { max-width: 100px; } #hardeningChecksPanel > .table-head { display: block; } .result-view-switch { margin-top: 12px; } .export-options { right: auto; left: -60px; width: 270px; } }
+@media print { .wb-nav, .wb-filters, .wb-check-list { display: none; } .workbench { display: block; } .wb-detail { overflow: visible; max-height: none; } }

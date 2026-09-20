@@ -1,4 +1,5 @@
 import { checkOwnerScope, canonicalGatewayName, gatewayIdentityKey, targetNameFromRow, displayCellValue, gatewayTargetsForCheck, collectionMessage } from "./finding-model.js";
+import { mountWorkbench } from "./workbench.js";
 let sessionId = "";
 let hardeningScan = null;
 const openCheckGroups = new Set();
@@ -82,6 +83,10 @@ let reauthReject = null;
 let scanProgressTimer = null;
 
 function setBusy(isBusy) {
+  // The workbench holds inactive cards off-document. Lock its entire subtree,
+  // including filters, so an operation cannot mount a different action card.
+  checksList.inert = isBusy;
+  checksList.setAttribute("aria-busy", String(isBusy));
   document.querySelectorAll("button").forEach((button) => {
     if (!button.closest("#reauthOverlay")) {
       button.disabled = isBusy;
@@ -1433,8 +1438,8 @@ function isManagementObjectCheck(check = {}) {
   return check.category === "Management Plane Protection" || check.id === "gaia.management-external-syslog";
 }
 
-function managementObjectDisplayName(checks = []) {
-  if (hardeningScan?.managementObjectName) return hardeningScan.managementObjectName;
+function managementObjectDisplayName(checks = [], scan = hardeningScan) {
+  if (scan?.managementObjectName) return scan.managementObjectName;
   for (const check of checks) {
     for (const row of check.evidenceTable?.rows || []) {
       const name = displayCellValue(row["Management Server Name"] || row["Management Name"] || row["Management Object"] || "").trim();
@@ -1445,39 +1450,39 @@ function managementObjectDisplayName(checks = []) {
       if (/^management/i.test(String(table.title || "")) && name) return name;
     }
   }
-  return hardeningScan?.reportDomainName || "Management server";
+  return scan?.reportDomainName || "Management server";
 }
 
-function infrastructureGatewayTargets(checks = [], managementObjectName = "") {
+function infrastructureGatewayTargets(checks = [], managementObjectName = "", scan = hardeningScan) {
   const targets = new Map();
   const remember = (value) => {
     const name = canonicalGatewayName(value);
     const key = gatewayIdentityKey(name);
     if (key && key !== gatewayIdentityKey(managementObjectName) && !targets.has(key)) targets.set(key, name);
   };
-  (hardeningScan?.gatewayTargets || []).forEach(remember);
+  (scan?.gatewayTargets || []).forEach(remember);
   checks.forEach((check) => gatewayTargetsForCheck(check).forEach(remember));
   return [...targets.values()].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 }
 
-function infrastructureGatewayLabel(targetName) {
+function infrastructureGatewayLabel(targetName, scan = hardeningScan) {
   const name = canonicalGatewayName(targetName);
   const key = gatewayIdentityKey(name);
-  const clusterKeys = new Set((hardeningScan?.clusterTargets || []).map(gatewayIdentityKey).filter(Boolean));
+  const clusterKeys = new Set((scan?.clusterTargets || []).map(gatewayIdentityKey).filter(Boolean));
   if (clusterKeys.has(key)) return `${name} (Cluster Object)`;
-  const membership = (hardeningScan?.clusterMemberships || []).find((item) => gatewayIdentityKey(item.memberName) === key);
+  const membership = (scan?.clusterMemberships || []).find((item) => gatewayIdentityKey(item.memberName) === key);
   return membership?.clusterName ? `${name} (cluster member of: ${canonicalGatewayName(membership.clusterName)})` : name;
 }
 
-function renderInfrastructureHierarchy(checks = [], contextKey = "environment") {
+function renderInfrastructureHierarchy(checks = [], contextKey = "environment", scan = hardeningScan) {
   const managementOwnedChecks = checks.filter((check) => checkOwnerScope(check) === "management");
   const policyChecks = checks.filter((check) => checkOwnerScope(check) === "policy");
   const gatewayChecks = checks.filter((check) => checkOwnerScope(check) === "gateway");
   const managementObjectChecks = managementOwnedChecks.filter(isManagementObjectCheck);
-  const managementObjectName = managementObjectDisplayName([...managementObjectChecks, ...gatewayChecks]);
+  const managementObjectName = managementObjectDisplayName([...managementObjectChecks, ...gatewayChecks], scan);
   const managementObjectKey = gatewayIdentityKey(managementObjectName);
-  const logicalClusterKeys = new Set((hardeningScan?.clusterTargets || []).map(gatewayIdentityKey).filter(Boolean));
-  const knownGatewayTargets = infrastructureGatewayTargets(gatewayChecks, managementObjectName);
+  const logicalClusterKeys = new Set((scan?.clusterTargets || []).map(gatewayIdentityKey).filter(Boolean));
+  const knownGatewayTargets = infrastructureGatewayTargets(gatewayChecks, managementObjectName, scan);
   const managementChecks = [
     ...managementOwnedChecks.filter((check) => !isManagementObjectCheck(check)),
     ...policyChecks.filter((check) => !["policy.stealth-rule", "policy.gateway-object-status"].includes(check.id))
@@ -1512,14 +1517,14 @@ function renderInfrastructureHierarchy(checks = [], contextKey = "environment") 
       if (!sharedCheckHasFindingForGateway(check, target)) continue;
       const targetKey = gatewayIdentityKey(target);
       if (!byTarget.has(targetKey)) byTarget.set(targetKey, { name: canonicalGatewayName(target), checks: [] });
-      byTarget.get(targetKey).checks.push(checkForGateway(check, target, targets.length, { forceReference: true, referenceLocation: "Policy packages" }));
+      byTarget.get(targetKey).checks.push(checkForGateway(check, target, targets.length, { forceReference: true, referenceLocation: "Categories" }));
     }
   }
   const targetNodes = [...byTarget.values()]
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
     .map(({ name: target, checks: targetChecks }, index) => renderHierarchyNode({
     key: `${contextKey}:gateway:${target}`,
-    title: infrastructureGatewayLabel(target),
+    title: infrastructureGatewayLabel(target, scan),
     description: "All checks and target-specific evidence for this gateway or cluster",
     checks: orderInfrastructureChecks(targetChecks),
     open: index === 0,
@@ -1609,7 +1614,7 @@ function renderChecks() {
           <span>${domain.scan ? `${domain.scan.checks?.length || 0} checks` : "Scan failed"}</span>
         </summary>
         <div class="mora-domain-content">
-          ${domain.scan ? (resultsView === "hierarchy" ? renderInfrastructureHierarchy(domain.scan.checks || [], `domain:${domain.uid || domain.name}`) : renderCheckGroupsMarkup(domain.scan.checks || [])) : `<p class="mora-domain-error">${escapeHtml(domain.error || "This domain could not be scanned.")}</p>`}
+          ${domain.scan ? (resultsView === "hierarchy" ? renderInfrastructureHierarchy(domain.scan.checks || [], `domain:${domain.uid || domain.name}`, domain.scan) : renderCheckGroupsMarkup(domain.scan.checks || [])) : `<p class="mora-domain-error">${escapeHtml(domain.error || "This domain could not be scanned.")}</p>`}
         </div>
       </details>
     `).join("")
@@ -1702,6 +1707,9 @@ function renderChecks() {
       }
     });
   });
+  // Move the existing, fully bound evidence cards into the workbench. No scan
+  // payload or remediation target is rebuilt by the presentation layer.
+  mountWorkbench(checksList, { view: resultsView, sessionKey: sessionId });
 }
 
 hierarchyViewButton.addEventListener("click", () => {

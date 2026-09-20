@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Check Point Hardening App - Open Public Edition</title>
     <link rel="stylesheet" href="/styles.css?v=20260812-v2-production-login">
+    <link rel="stylesheet" href="/workbench.css?v=1">
   </head>
   <body>
     <main class="app">
@@ -101,13 +102,19 @@
               <span>Check Point Hardening App</span>
               <span>Open Public Edition</span>
             </h1>
-            <p class="topbar-description">Checks are aligned to the Check Point Gateway and Management Hardening Administration Guide. Some controls can be inspected through Management API evidence; others are marked for manual validation when they depend on network design, Gaia Portal, Gaia API, SSH/Clish, identity provider settings, or out-of-band management.</p>
+            <p class="topbar-description">Independent third-party tool. Not created, endorsed, or supported by Check Point.</p>
           </div>
           <div class="actions">
             <button id="scanButton" class="primary">Scan Hardening Posture</button>
             <button id="cancelScanButton" type="button" hidden>Cancel scan</button>
-            <button id="exportInfrastructurePdfButton" type="button" disabled>Export Infrastructure Report PDF</button>
-            <button id="exportPdfButton" type="button" disabled>Export Category Report PDF</button>
+            <details class="export-menu">
+              <summary>Export reports</summary>
+              <div class="export-options">
+                <button id="exportInfrastructurePdfButton" type="button" disabled>Export Infrastructure Report PDF</button>
+                <button id="exportPdfButton" type="button" disabled>Export Category Report PDF</button>
+                <p>Exports the full scan, not the current filters. All-domain scans download as a ZIP.</p>
+              </div>
+            </details>
             <button id="logoutButton">Log out</button>
           </div>
         </header>
@@ -143,7 +150,7 @@
           <div class="table-head">
             <div>
               <h2>Hardening Checks</h2>
-            <p>Review checks by the object that owns the setting, or switch to the original category view. Management and policy-owned controls remain under Policy and Management; gateway evidence stays with the gateway it describes.</p>
+            <p>Choose an object, review its checks, and inspect the evidence.</p>
             </div>
             <div class="result-view-switch" role="group" aria-label="Result layout">
               <button id="hierarchyViewButton" type="button" class="view-switch-button active" aria-pressed="true">Infrastructure</button>
@@ -256,6 +263,6 @@
         </form>
       </section>
     </div>
-    <script type="module" src="/app.js?v=structure-1"></script>
+    <script type="module" src="/app.js?v=workbench-1"></script>
   </body>
 </html>

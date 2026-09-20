@@ -7,6 +7,8 @@ engagements/
 reports/
 exports/
 screenshots/
+.impeccable/build/
+.impeccable/review/
 *.log
 *.tmp
 *.pyc
