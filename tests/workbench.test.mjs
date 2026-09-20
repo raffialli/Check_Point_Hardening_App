@@ -1,9 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { statusBucket, matchesFinding, scopePresentation, orderNavigationScopes } from '../public/workbench.js';
+import { statusBucket, matchesFinding, scopePresentation, orderNavigationScopes, summarizeFindings } from '../public/workbench.js';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { checkOwnerScope, canonicalGatewayName, gatewayIdentityKey, displayCellValue, gatewayTargetsForCheck } from '../public/finding-model.js';
+
+test('summary accounts for informational and unfamiliar statuses without merging reviewed with passed', () => {
+  const statuses = ['remediation-required', 'remediation-recommended', 'needs-review', 'manual', 'unknown', 'pass', 'reviewed', 'informational', 'not-applicable', undefined];
+  const summary = summarizeFindings(statuses.map(status => ({status})));
+  assert.equal(summary[0].count, 10);
+  assert.equal(summary.slice(1).reduce((sum, item) => sum + item.count, 0), 10);
+  assert.equal(summary.find(item => item.key === 'action').count, 2);
+  assert.equal(summary.find(item => item.key === 'unknown').count, 2);
+  for (const key of ['pass', 'reviewed', 'informational', 'not-applicable']) assert.equal(summary.find(item => item.key === key).count, 1);
+});
 
 test('workbench preserves every status distinction and combines action aliases', () => {
   assert.equal(statusBucket('remediation-required'), 'action');

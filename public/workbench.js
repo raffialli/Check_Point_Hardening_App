@@ -9,6 +9,19 @@ export function statusBucket(status) {
   return status || "unknown";
 }
 
+export function summarizeFindings(checks = []) {
+  const counts = new Map();
+  for (const check of checks) {
+    const key = statusBucket(check.status);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  const labels = {action: 'Remediation needed', review: 'Review recommended', manual: 'Manual validation', unknown: 'Unknown', pass: 'Passed', reviewed: 'Reviewed', informational: 'Informational'};
+  const keys = [...Object.keys(labels), ...[...counts.keys()].filter(key => !(key in labels))];
+  return [{key: 'total', label: 'Total checks', count: checks.length}, ...keys
+    .filter(key => counts.has(key) || ['action', 'review', 'manual', 'unknown', 'pass'].includes(key))
+    .map(key => ({key, label: labels[key] || key.replaceAll('-', ' '), count: counts.get(key) || 0}))];
+}
+
 function element(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -24,7 +37,6 @@ function icon(kind) {
     cluster: '<rect x="6" y="3" width="16" height="14" rx="1"/><path d="M6 8h16M6 12h16M14 3v5m-4 0v4m8-4v4m-4 0v5M2 7v14h16"/>',
     category: '<path d="M4 5h16M4 12h16M4 19h16"/>',
     chevron: '<path d="m9 5 7 7-7 7"/>',
-    expand: '<path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/>',
     api: '<path d="m7 7-5 5 5 5m10-10 5 5-5 5m-3-13-4 20"/>',
     guide: '<path d="M12 5C9 3 5 3 2 4v15c3-1 7-1 10 1 3-2 7-2 10-1V4c-3-1-7-1-10 1Zm0 0v15"/>'
   };
@@ -109,6 +121,8 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
   nav.setAttribute("aria-label", "Scan objects");
   const center = element("section", "wb-findings");
   const detail = element("section", "wb-detail");
+  detail.id = 'selectedCheckEvidence';
+  detail.tabIndex = -1;
   detail.setAttribute("aria-label", "Selected check evidence");
   const navList = element("div", "wb-nav-list");
   const heading = element("h2", "wb-scope-title");
@@ -144,12 +158,16 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
       button.setAttribute("aria-pressed", String(selected));
     });
     if (!check) { detail.append(element("p", "wb-empty", "Select a check to review its evidence.")); return; }
-    const context = element("p", "wb-evidence-context", `${scopePresentation(scope.title, scope.section).name} / ${check.category}`);
+    const context = element("p", "wb-evidence-context", `${scopePresentation(scope.title, scope.section).name} / ${check.category} · Check ${scope.checks.indexOf(check) + 1} of ${scope.checks.length}`);
     const toolbar = element('div', 'wb-evidence-toolbar');
-    const expand = element('button', 'wb-expand'); expand.type = 'button';
-    const updateExpand = () => { const expanded = host.classList.contains('evidence-expanded'); expand.replaceChildren(icon('expand'), element('span', '', expanded ? 'Back to checks' : 'Expand evidence')); expand.setAttribute('aria-expanded', String(expanded)); };
-    expand.addEventListener('click', () => { if (host.inert) return; host.classList.toggle('evidence-expanded'); updateExpand(); });
-    updateExpand(); toolbar.append(context, expand);
+    const back = element('button', 'wb-back', 'Back to checks'); back.type = 'button';
+    back.addEventListener('click', () => {
+      if (host.inert) return;
+      host.classList.remove('show-evidence');
+      list.querySelector('.selected')?.focus({preventScroll: true});
+      center.scrollIntoView({block: 'start'});
+    });
+    toolbar.append(context, back);
     check.card.open = true;
     check.card.querySelectorAll('.evidence-table-wrap').forEach((wrap) => {
       wrap.tabIndex = 0; wrap.setAttribute('role', 'region');
@@ -162,6 +180,7 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
       }
     });
     detail.append(toolbar, check.card);
+    detail.scrollTop = 0;
   };
   const showList = () => {
     list.replaceChildren();
@@ -171,6 +190,7 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
     for (const check of checks) {
       if (category !== check.category) { category = check.category; list.append(element("h3", "wb-category", category)); }
       const button = element("button", "wb-check-row"); button.type = "button"; button.dataset.checkId = check.id;
+      button.setAttribute('aria-controls', detail.id);
       const title = element("span", "wb-check-title", check.title);
       const bucket = statusBucket(check.status);
       const statusText = {action:'Action needed', review:'Review'}[bucket] || check.statusText;
@@ -179,7 +199,10 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
       button.append(title, badge, element('span', `wb-severity ${check.severity}`, check.severity), icon('chevron')); button.addEventListener("click", () => {
         if (host.inert) return;
         showCheck(check);
-        if (matchMedia("(max-width: 900px)").matches) { detail.tabIndex = -1; detail.focus(); }
+        if (matchMedia("(max-width: 760px), (max-height: 650px)").matches) {
+          host.classList.add('show-evidence');
+          detail.focus({preventScroll: true}); detail.scrollIntoView({block: 'start'});
+        }
       }); list.append(button);
     }
     if (!checks.length) {
@@ -189,7 +212,7 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
     showCheck(checks.find((check) => check.id === saved.check) || checks[0]);
   };
   const chooseScope = (next) => {
-    host.classList.remove('evidence-expanded');
+    host.classList.remove('show-evidence');
     scope = next; saved.scope = scope?.key || "";
     const presentation = scope ? scopePresentation(scope.title, scope.section) : null;
     heading.textContent = presentation?.name || domain.title;

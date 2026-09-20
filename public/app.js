@@ -1,5 +1,5 @@
 import { checkOwnerScope, canonicalGatewayName, gatewayIdentityKey, targetNameFromRow, displayCellValue, gatewayTargetsForCheck, collectionMessage } from "./finding-model.js";
-import { mountWorkbench } from "./workbench.js?v=firewall-icons-1";
+import { mountWorkbench, summarizeFindings } from "./workbench.js?v=vertical-1";
 let sessionId = "";
 let hardeningScan = null;
 const openCheckGroups = new Set();
@@ -666,21 +666,13 @@ function severityLabel(severity) {
   return labels[severity] || severity || "Medium";
 }
 
-function renderSummary(summary = {}) {
-  const remediationNeeded = Number(summary["remediation-required"] || 0) + Number(summary["remediation-recommended"] || 0);
-  const reviewRecommended = Number(summary["needs-review"] || 0) + Number(summary["remediation-review-recommended"] || 0);
-  const items = [
-    ["remediation-required", "Remediation Needed", remediationNeeded],
-    ["needs-review", "Review Recommended", reviewRecommended],
-    ["reviewed", "Reviewed"],
-    ["manual", "Manual"]
-  ];
-  summaryGrid.innerHTML = items.map(([key, label, value]) => `
-    <div class="summary-card ${key}">
-      <span class="summary-value">${value ?? Number(summary[key] || 0)}</span>
-      <span class="summary-label">${label}</span>
+function renderSummary(checks = []) {
+  summaryGrid.innerHTML = checks.length ? summarizeFindings(checks).map(({key, label, count}) => `
+    <div class="summary-card ${escapeHtml(key)}">
+      <span class="summary-value">${count}</span>
+      <span class="summary-label">${escapeHtml(label)}</span>
     </div>
-  `).join("");
+  `).join("") : "";
 }
 
 function groupChecks(checks = []) {
@@ -1566,7 +1558,7 @@ function renderChecks() {
     downloadDebugLogButton.disabled = true;
     exportPdfButton.disabled = true;
     exportInfrastructurePdfButton.disabled = true;
-    renderSummary({});
+    renderSummary();
     return;
   }
   exportPdfButton.disabled = false;
@@ -1590,21 +1582,15 @@ function renderChecks() {
   scanStatus.className = "global-status";
   scanStatus.innerHTML = `
     <dl>${renderDetails({
-      "Checks": checks.length,
       ...(hardeningScan.moraMode ? {
         "Domains scanned": moraDomains.filter((domain) => domain.scan).length,
         "Domains failed": moraDomains.filter((domain) => !domain.scan).length
       } : {}),
-      "Remediation recommended": Number(hardeningScan.summary?.["remediation-required"] || 0) + Number(hardeningScan.summary?.["remediation-recommended"] || 0),
-      "Review recommended": Number(hardeningScan.summary?.["needs-review"] || 0) + Number(hardeningScan.summary?.["remediation-review-recommended"] || 0),
-      "Manual validation": hardeningScan.summary?.manual || 0,
-      "Unknown": hardeningScan.summary?.unknown || 0,
-      "Passed": hardeningScan.summary?.pass || 0,
       "Scanned": scanned,
-      ...(hardeningScan.moraMode ? {} : { "Last Scan": lastScanText })
+      ...(!hardeningScan.moraMode && lastScan?.scannedAt ? { "Previous scan": lastScanText } : {})
     })}</dl>
   `;
-  renderSummary(hardeningScan.summary || {});
+  renderSummary(checks);
 
   checksList.innerHTML = hardeningScan.moraMode
     ? moraDomains.map((domain, index) => `
