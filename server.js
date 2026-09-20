@@ -6000,7 +6000,8 @@ function allIpv4Values(value) {
 }
 
 function statusDescriptionText(result) {
-  if (!result?.ok) return "";
+  // Failed tasks still carry diagnostic output (including Gaia lock errors).
+  if (!result?.data) return "";
   const taskDetailValues = (result.data?.tasks || [])
     .flatMap((task) => task?.["task-details"] || task?.taskDetails || [])
     .map((detail) => detail?.statusDescription || detail?.["status-description"])
@@ -6028,7 +6029,7 @@ function statusDescriptionText(result) {
 }
 
 function responseMessageText(result) {
-  if (!result?.ok) return "";
+  if (!result?.data) return "";
   const responseMessages = (result.data?.tasks || [])
     .flatMap((task) => task?.["task-details"] || task?.taskDetails || [])
     .map((detail) => detail?.responseMessage || detail?.["response-message"])
@@ -6696,7 +6697,7 @@ function evaluateGaiaAllowedHostAccess(result, session) {
     category: "Gaia OS Hardening",
     title: "Gaia Allowed Host Access",
     recommendation: "Limit access to GAIA trusted client access to the necessary IP addresses, subnets, and ranges.",
-    status: result.ok ? (reviewedThisLogin ? "reviewed" : (hasAnyAccess ? "remediation-recommended" : "needs-review")) : "unknown",
+    status: hasAnyAccess ? "remediation-recommended" : (result.ok ? (reviewedThisLogin ? "reviewed" : "needs-review") : "unknown"),
     severity: hasAnyAccess ? "high" : "medium",
     evidence: evidenceTables.length
       ? `${evidenceTables.length} Gaia OS target${evidenceTables.length === 1 ? "" : "s"} returned allowed-host access evidence.`
@@ -9788,7 +9789,7 @@ async function runGaiaConfigCommandWithLockOverride(session, target, scriptName,
   if (gaiaOutputIncludesConfigLock(commandResult)) {
     lockOverrideResult = await acquireLockOverride();
     if (!lockOverrideResult.ok) {
-      throw enrichError(new Error(`Could not acquire the Gaia configuration lock on ${target.name}.`), {
+      throw enrichError(new Error(`Could not acquire the Gaia configuration lock on ${target.name}. ${responseMessageText(lockOverrideResult) || statusDescriptionText(lockOverrideResult) || lockOverrideResult.error?.error || ""}`.trim()), {
         command: "run-script: lock database override",
         phase: "gaia-config-lock",
         target: target.name,
@@ -9813,7 +9814,9 @@ async function runGaiaConfigCommandWithLockOverride(session, target, scriptName,
     }
   }
   if (!commandResult.ok) {
-    throw enrichError(new Error(commandResult.error?.error || `Gaia configuration command failed on ${target.name}.`), {
+    const failureDetail = responseMessageText(commandResult) || statusDescriptionText(commandResult);
+    const failureSummary = commandResult.error?.error || `Gaia configuration command failed on ${target.name}.`;
+    throw enrichError(new Error(failureDetail ? `${failureSummary}: ${failureDetail}` : failureSummary), {
       command: `run-script: ${command}`,
       phase: "remediation-command",
       target: target.name,

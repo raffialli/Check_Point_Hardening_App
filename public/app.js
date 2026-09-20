@@ -949,7 +949,12 @@ function renderEvidenceTable(table, checkId = "") {
   const selectable = Boolean(table.selectable) && !hardeningScan?.moraMode;
   const columns = selectable ? ["Select", ...table.columns] : table.columns;
   const tableClass = table.compact ? "evidence-table evidence-table--compact" : "evidence-table";
-  const targetSelection = table.targetSelection?.value && !hardeningScan?.moraMode ? `
+  const implicitTarget = table.targetSelection?.implicit && !hardeningScan?.moraMode ? `
+    <span hidden class="gaia-implicit-target" data-target-name="${escapeHtml(table.targetSelection.value)}"
+      data-has-any="${table.targetSelection.hasAnyAllowedClient ? "true" : "false"}"
+      data-only-any="${table.targetSelection.onlyAnyAllowedClient ? "true" : "false"}"></span>
+  ` : "";
+  const targetSelection = table.targetSelection?.value && !table.targetSelection.implicit && !hardeningScan?.moraMode ? `
     <label class="evidence-target-selection">
       <input
         class="evidence-target-checkbox"
@@ -965,7 +970,7 @@ function renderEvidenceTable(table, checkId = "") {
   ` : "";
   return `
     <div class="evidence-table-wrap">
-      <div class="evidence-title"><span>${escapeHtml(table.title || "Evidence")}</span>${targetSelection}</div>
+      <div class="evidence-title"><span>${escapeHtml(table.title || "Evidence")}</span>${targetSelection}${implicitTarget}</div>
       <table class="${tableClass}">
         <thead>
           <tr>${columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("")}</tr>
@@ -986,7 +991,7 @@ function renderEvidenceTables(tables = [], checkId = "") {
   if (!Array.isArray(tables) || !tables.length) {
     return "";
   }
-  const hasTargetSelection = !hardeningScan?.moraMode && tables.some((table) => table.targetSelection?.value);
+  const hasTargetSelection = !hardeningScan?.moraMode && tables.some((table) => table.targetSelection?.value && !table.targetSelection.implicit);
   const selectAll = checkId === "gaia.allowed-host-access" && hasTargetSelection ? `
     <label class="evidence-target-select-all">
       <input
@@ -1386,11 +1391,23 @@ function checkForGateway(check, targetName, affectedTargetCount, { forceReferenc
     const tableIsTarget = gatewayIdentityKey(table.title || "") === gatewayIdentityKey(targetName);
     const rows = (matchingRows.length && !tableIsTarget ? matchingRows : (table.rows || []))
       .map((row) => readOnlyReference ? readOnlyEvidenceRow(row) : row);
-    return { ...table, selectable: readOnlyReference ? false : table.selectable, rows };
+    return { ...table, selectable: readOnlyReference ? false : table.selectable, rows,
+      targetSelection: readOnlyReference ? null : table.targetSelection ? { ...table.targetSelection, implicit: check.id === "gaia.allowed-host-access" } : null };
   });
+  // Device evidence must not inherit another device's failed lookup or AnyHost finding.
+  const gaiaRows = check.id === "gaia.allowed-host-access" ? evidenceTables.flatMap(table => table.rows || []) : [];
+  const gaiaHasAny = evidenceTables.some(table => table.targetSelection?.hasAnyAllowedClient)
+    || gaiaRows.some(row => displayCellValue(row.Type).toLowerCase() === "any");
+  const gaiaComplete = gaiaRows.length > 0 && gaiaRows.every(row => /^(any|ipv4 address|ipv4 netmask|ipv4 address range)$/i.test(displayCellValue(row.Type)));
+  const gaiaState = check.id === "gaia.allowed-host-access" ? {
+    status: gaiaHasAny ? "remediation-recommended" : gaiaComplete ? (check.status === "reviewed" ? "reviewed" : "needs-review") : "unknown",
+    severity: gaiaHasAny ? "high" : "medium",
+    ...(gaiaComplete ? { collection: { status: "complete", errors: [] } } : {})
+  } : {};
   const targetDetailRows = targetScoped ? detailRowsForGateway(check.detailRows || [], targetName) : check.detailRows;
   return {
     ...check,
+    ...gaiaState,
     hierarchyReference: readOnlyReference,
     hierarchyReferenceLocation: readOnlyReference ? referenceLocation : "",
     evidence: targetScoped
@@ -1971,8 +1988,12 @@ function gaiaAllowedClientFieldRows(type) {
   `;
 }
 
+function selectedGaiaTargets() {
+  return [...document.querySelectorAll('.gaia-implicit-target, .evidence-target-checkbox[data-check-id="gaia.allowed-host-access"]:checked')];
+}
+
 function handleAddGaiaAllowedClientClick() {
-  const selectedTargets = [...document.querySelectorAll('.evidence-target-checkbox[data-check-id="gaia.allowed-host-access"]:checked')]
+  const selectedTargets = selectedGaiaTargets()
     .map((checkbox) => checkbox.dataset.targetName)
     .filter(Boolean);
   if (!selectedTargets.length) {
@@ -2053,7 +2074,7 @@ function handleAddGaiaAllowedClientClick() {
 }
 
 async function handleDeleteGaiaAnyHostClick() {
-  const selected = [...document.querySelectorAll('.evidence-target-checkbox[data-check-id="gaia.allowed-host-access"]:checked')];
+  const selected = selectedGaiaTargets();
   const targetNames = selected.map((checkbox) => checkbox.dataset.targetName).filter(Boolean);
   if (!targetNames.length) {
     showPopup("Select Gaia Devices", "Select one or more gateway or management objects before deleting AnyHost.");

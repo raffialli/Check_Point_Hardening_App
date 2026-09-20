@@ -24,8 +24,14 @@ The repository intentionally excludes generated reports, screenshots, diagrams, 
 
 ## Run locally
 
+Run these commands from the repository folder containing `package.json`. Initial dependency and browser installation requires internet access (or a prepared offline bundle).
+
+### macOS / Linux
+
 ```sh
 npm ci
+npm run install:browsers
+npm run check
 npm start
 ```
 
@@ -36,6 +42,37 @@ To use another port:
 ```sh
 PORT=8080 npm start
 ```
+
+### Windows (PowerShell)
+
+Install dependencies and the Chromium browser used for PDF export, then validate JavaScript syntax:
+
+```powershell
+npm ci
+npm run install:browsers
+npm run check
+```
+
+Configure the timeout values and start the app on port 3200:
+
+```powershell
+# Persist timeout settings for future sessions under your Windows user account.
+[Environment]::SetEnvironmentVariable("CP_API_TIMEOUT_MS", "60000", "User")
+[Environment]::SetEnvironmentVariable("CP_SIC_TEST_TIMEOUT_MS", "120000", "User")
+
+# Apply settings to this PowerShell session as well.
+$env:CP_API_TIMEOUT_MS = "60000"
+$env:CP_SIC_TEST_TIMEOUT_MS = "120000"
+$env:PORT = "3200"
+
+npm start
+```
+
+Open [http://127.0.0.1:3200](http://127.0.0.1:3200). The app listens on localhost by default.
+
+The timeout values are milliseconds: this setup allows 60 seconds for ordinary API requests and 120 seconds for SIC tests. The app defaults are 45 seconds and 120 seconds respectively; these overrides are configuration choices, not Windows requirements. Script task polling has a separate deadline described below.
+
+The `User` settings persist, while `$env:` assignments apply to the current PowerShell process and the app launched from it. `PORT` is not persisted by these commands; set `$env:PORT = "3200"` again when starting from a new terminal. Restart the app after changing environment settings. `npm run check` checks syntax only; it does not test connectivity or credentials.
 
 ## Use
 
