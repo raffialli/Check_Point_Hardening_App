@@ -1236,8 +1236,12 @@ function evaluateManagementApiAccess(apiSettings, trustedClients, session) {
 
   const acceptedFrom = apiSettings.data?.["accepted-api-calls-from"] || "Not returned";
   const acceptedToken = normalizeToken(acceptedFrom);
-  const allowsAny = acceptedToken === "allipaddresses";
+  const allowsAllAddresses = acceptedToken === "allipaddresses";
   const usesGuiClients = acceptedToken === "allipaddressesthatcanbeusedforguiclients";
+  const guiClientsAllowAny = usesGuiClients && (trustedClients.objects || []).some((client) =>
+    normalizeToken(client.type || client.TYPE || "") === "any"
+  );
+  const allowsAny = allowsAllAddresses || guiClientsAllowAny;
   const rows = usesGuiClients && trustedClients.ok
     ? trustedClientRows(trustedClients.objects || [])
     : [{
@@ -1257,7 +1261,9 @@ function evaluateManagementApiAccess(apiSettings, trustedClients, session) {
       columns: usesGuiClients && trustedClients.ok ? ["Name", "Type", "IP Data"] : ["Setting", "Value"],
       rows
     } : null,
-    details: allowsAny
+    details: guiClientsAllowAny
+      ? "Management API access uses the GUI trusted client list, which includes an ANY entry (AnyHost). This allows API access from ANY IP address. Restrict the list under Restrict SmartConsole Trusted Clients; selecting the same GUI client setting again will not remove this exposure."
+      : allowsAny
       ? "You are currently allowing API access from ANY IP address. Check Point recommends immediately setting this to match the GUI clients list or Manager Only."
       : (usesGuiClients
         ? "Trusted client names were returned from System Data. Review each name to confirm access is limited to approved administrative sources."
@@ -1268,19 +1274,19 @@ function evaluateManagementApiAccess(apiSettings, trustedClients, session) {
       "show-api-settings: accepted-api-calls-from",
       ...(usesGuiClients ? ["show-trusted-clients: name,type"] : [])
     ],
-    remediation: allowsAny ? {
+    remediation: allowsAllAddresses ? {
       action: "set-api-clients-gui-clients",
       label: "Set API Clients to match GUI Clients",
       command: "set-api-settings",
       target: "all ip addresses that can be used for gui clients"
     } : null,
-    review: {
+    review: !allowsAny ? {
       action: "mark-reviewed",
       label: "Mark as Reviewed",
       reviewedAt: reviewHistory?.reviewedAt || "",
       reviewedBy: reviewHistory?.reviewedBy || "",
       reviewedThisLogin
-    }
+    } : null
   });
 }
 
