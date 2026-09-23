@@ -74,6 +74,26 @@ The timeout values are milliseconds: this setup allows 60 seconds for ordinary A
 
 The `User` settings persist, while `$env:` assignments apply to the current PowerShell process and the app launched from it. `PORT` is not persisted by these commands; set `$env:PORT = "3200"` again when starting from a new terminal. Restart the app after changing environment settings. `npm run check` checks syntax only; it does not test connectivity or credentials.
 
+## Run for Prism
+
+From the repository folder:
+
+```sh
+npm start
+```
+
+Open `http://127.0.0.1:3000` (port 3000 unless `PORT` is set). On the launch page, under the title, the app shows the `package.json` version and the short git SHA. If this checkout is behind `origin/main`, an update banner appears. Click **Update** to fast-forward, run `npm install` when `package.json` or the lockfile changed, and restart. The control is marked **localhost only**; hover that label for why a non-localhost page cannot run the update.
+
+Live-pull risks:
+
+- The process restarts. In-memory sessions, credentials, and scans are dropped. Log out before updating.
+- `npm install` runs when dependency files changed, or when `node_modules` is missing, and needs network access. If it fails, the new commits stay checked out and the server is not restarted.
+- A dirty working tree, a branch other than `main`, or history that is not a fast-forward is refused. The updater does not stash, reset, rebase, or force-update.
+- The update check runs `git fetch` and moves the `origin/main` remote-tracking ref.
+- If the process does not come back, start it again with `npm start`.
+
+`APP_UPDATE_REMOTE` and `APP_UPDATE_BRANCH` default to `origin` and `main`. `APP_UPDATE_SOURCE` is the plug-in point for a later release check; only `git` is implemented, and one-click apply stays on that git path.
+
 ## Use
 
 1. Select the management host type.

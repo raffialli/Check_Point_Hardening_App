@@ -12,10 +12,22 @@ import { collectPages, scopedCommandKey, collectionOutcome } from "./lib/collect
 import { pollScriptTasks } from "./lib/task-polling.js";
 import { operationContext, beginOperation, finishOperation, assertNotCancelled, trackRequest } from "./lib/operations.js";
 import { checkOwnerScope, withFindingIdentity } from "./public/finding-model.js";
+import { assessLocalhostGate } from "./lib/localhost-gate.js";
+import { readVersionInfo } from "./lib/version-info.js";
+import { resolveUpdateSource } from "./lib/update-check.js";
+import { applyGitUpdate, canApplyUpdate, scheduleProcessRestart } from "./lib/apply-update.js";
 const STANDARD_API_CONCURRENCY = positiveIntegerEnv("API_CONCURRENCY", 10);
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "127.0.0.1";
+const APP_ROOT = process.cwd();
+const APP_UPDATE_REMOTE = process.env.APP_UPDATE_REMOTE || "origin";
+const APP_UPDATE_BRANCH = process.env.APP_UPDATE_BRANCH || "main";
+const APP_UPDATE_SOURCE = process.env.APP_UPDATE_SOURCE || "git";
+const bootId = randomUUID();
+const httpServers = [];
+let updateInProgress = false;
+let updateStatusFlight = null;
 const PUBLIC_DIR = join(process.cwd(), "public");
 const REPORT_BASE_PDF = process.env.REPORT_BASE_PDF || join(PUBLIC_DIR, "assets", "Hardening Report Base.pdf");
 const REPORT_GENERATOR = join(process.cwd(), "scripts", "generate_report_pdf.mjs");
@@ -10222,7 +10234,71 @@ async function handleApiRequest(req, res) {
       });
       return;
     }
+    if (routePathname(req.url) === "/api/app/version" && req.method === "GET") {
+      const version = await readVersionInfo({ root: APP_ROOT });
+      sendJson(res, 200, { requestId, bootId, ...version });
+      return;
+    }
+    if (routePathname(req.url) === "/api/app/update-status" && req.method === "GET") {
+      const version = await readVersionInfo({ root: APP_ROOT });
+      const gate = assessLocalhostGate(releaseRequest(req));
+      let update;
+      try {
+        update = await loadUpdateStatus();
+      } catch (error) {
+        update = {
+          source: APP_UPDATE_SOURCE,
+          updateAvailable: false,
+          fastForward: false,
+          dirty: false,
+          local: version,
+          remote: null,
+          message: error.message,
+          error: error.message
+        };
+      }
+      const eligibility = canApplyUpdate({
+        update,
+        gate,
+        hasActiveSessions: sessions.size > 0
+      });
+      sendJson(res, 200, {
+        requestId,
+        bootId,
+        version,
+        update,
+        gate: { allowed: gate.allowed, label: gate.label, detail: gate.detail },
+        canApply: eligibility.ok && !updateInProgress,
+        applyBlockReason: updateInProgress ? "An update is already running." : eligibility.reason
+      });
+      return;
+    }
     payload = await readBody(req);
+    if (routePathname(req.url) === "/api/app/update" && req.method === "POST") {
+      if (APP_UPDATE_SOURCE !== "git") {
+        throw Object.assign(new Error("One-click update is only implemented for the git source."), { httpStatus: 501 });
+      }
+      if (updateInProgress) {
+        throw Object.assign(new Error("An update is already running."), { httpStatus: 409 });
+      }
+      updateInProgress = true;
+      try {
+        log("Local app update requested", { requestId, host: req.headers.host || "" });
+        const result = await applyGitUpdate({
+          root: APP_ROOT,
+          remote: APP_UPDATE_REMOTE,
+          branch: APP_UPDATE_BRANCH,
+          gate: assessLocalhostGate(releaseRequest(req)),
+          hasActiveSessions: () => sessions.size > 0
+        });
+        sendJson(res, 200, { requestId, bootId, restarting: true, ...result });
+        restartAfterResponse(res, result);
+      } catch (error) {
+        updateInProgress = false;
+        throw error;
+      }
+      return;
+    }
     if (req.url === "/api/cancel-scan" && req.method === "POST") {
       const session = getSession(payload.sessionId);
       if (session.activeOperation?.kind === "scan") {
@@ -10701,6 +10777,54 @@ async function serveStatic(req, res) {
   }
 }
 
+function routePathname(url = "") {
+  return String(url).split("?")[0];
+}
+
+function releaseRequest(req) {
+  return {
+    hostHeader: req.headers.host || "",
+    remoteAddress: req.socket?.remoteAddress || ""
+  };
+}
+
+function loadUpdateStatus() {
+  if (!updateStatusFlight) {
+    const source = resolveUpdateSource({
+      remote: APP_UPDATE_REMOTE,
+      branch: APP_UPDATE_BRANCH,
+      sourceId: APP_UPDATE_SOURCE
+    });
+    updateStatusFlight = source.check({ root: APP_ROOT }).finally(() => {
+      updateStatusFlight = null;
+    });
+  }
+  return updateStatusFlight;
+}
+
+function restartAfterResponse(res, result) {
+  let restarted = false;
+  const restart = () => {
+    if (restarted) return;
+    restarted = true;
+    try {
+      log("Restarting after app update", { version: result.label || "" });
+      scheduleProcessRestart({
+        script: join(APP_ROOT, "server.js"),
+        cwd: APP_ROOT,
+        port: PORT,
+        host: HOST
+      });
+    } catch (error) {
+      log("Failed to schedule app restart", { error: error.message });
+    }
+    for (const server of httpServers) server.close();
+    setTimeout(() => process.exit(0), 200);
+  };
+  res.on("finish", restart);
+  setTimeout(restart, 2000);
+}
+
 function handleRequest(req, res) {
   if (req.url.startsWith("/api/")) {
     void handleApi(req, res);
@@ -10714,6 +10838,7 @@ const listenHosts = [...new Set([HOST, ...(process.env.ADDITIONAL_HOSTS || "").s
   .map((host) => host.trim()).filter(Boolean))];
 for (const host of listenHosts) {
   const server = createServer(handleRequest);
+  httpServers.push(server);
   server.listen(PORT, host, () => {
     log("Check Point Hardening App - Open Public Edition listening", { url: `http://${host}:${PORT}` });
   });
