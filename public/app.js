@@ -1,5 +1,5 @@
 import { checkOwnerScope, canonicalGatewayName, gatewayIdentityKey, targetNameFromRow, displayCellValue, gatewayTargetsForCheck, collectionMessage } from "./finding-model.js";
-import { mountWorkbench, summarizeFindings } from "./workbench.js?v=tree-8";
+import { mountWorkbench, summarizeFindings, summaryChipModel, workbenchStatusFilter } from "./workbench.js?v=tree-9";
 let sessionId = "";
 let hardeningScan = null;
 const openCheckGroups = new Set();
@@ -667,12 +667,27 @@ function severityLabel(severity) {
 }
 
 function renderSummary(checks = []) {
-  summaryGrid.innerHTML = checks.length ? summarizeFindings(checks).map(({key, label, count}) => `
-    <div class="summary-card ${escapeHtml(key)}">
-      <span class="summary-value">${count}</span>
-      <span class="summary-label">${escapeHtml(label)}</span>
-    </div>
-  `).join("") : "";
+  summaryGrid.replaceChildren();
+  summaryGrid.setAttribute("aria-label", checks.length ? "Filter checks by status" : "Check status summary");
+  if (!checks.length) return;
+  for (const chip of summaryChipModel(summarizeFindings(checks), workbenchStatusFilter())) {
+    const card = document.createElement(chip.interactive ? "button" : "div");
+    card.className = `summary-card ${chip.key}${chip.pressed ? " is-active" : ""}${chip.interactive ? "" : " is-empty"}`;
+    card.dataset.status = chip.key;
+    if (chip.interactive) {
+      card.type = "button";
+      card.setAttribute("aria-pressed", String(chip.pressed));
+      card.setAttribute("aria-controls", "checksList");
+    }
+    const value = document.createElement("span");
+    value.className = "summary-value";
+    value.textContent = String(chip.count);
+    const label = document.createElement("span");
+    label.className = "summary-label";
+    label.textContent = chip.label;
+    card.append(value, label);
+    summaryGrid.append(card);
+  }
 }
 
 function groupChecks(checks = []) {
@@ -1712,7 +1727,7 @@ function renderChecks() {
   });
   // Move the existing, fully bound evidence cards into the workbench. No scan
   // payload or remediation target is rebuilt by the presentation layer.
-  mountWorkbench(checksList, { view: resultsView, sessionKey: sessionId, viewSwitch: hierarchyViewButton.parentElement, commandPanel, guideLink: document.querySelector('.guide-link') });
+  mountWorkbench(checksList, { view: resultsView, sessionKey: sessionId, viewSwitch: hierarchyViewButton.parentElement, commandPanel, guideLink: document.querySelector('.guide-link'), summaryRoot: summaryGrid });
 }
 
 hierarchyViewButton.addEventListener("click", () => {
