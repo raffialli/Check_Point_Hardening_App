@@ -40,6 +40,18 @@
 .creator-name { display: flex; align-items: center; gap: 4px; color: #075bc5; text-decoration: underline; text-underline-offset: 3px; }
 .creator-name svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.6; }
 .login-disclaimer { font-size: 12px; line-height: 1.65; color: #526278; margin: 0; }
+.app-release { margin-top: 28px; padding-top: 20px; border-top: 1px solid #d8e0ea; }
+.app-version { margin: 0 0 8px; font-size: 13px; font-weight: 700; color: #142033; }
+.app-update-banner { margin: 0 0 10px; padding: 10px 12px; border: 1px solid #f0d7a8; border-radius: 6px; background: #fff6e8; color: #6d4e00; font-size: 13px; line-height: 1.45; }
+.app-update-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.app-update-button { min-height: 36px; padding: 8px 14px; font-size: 14px; }
+.app-update-button:not(:disabled) { border-color: #ca004c; color: #ca004c; }
+.localhost-only { display: inline-flex; align-items: center; font-size: 12px; font-weight: 700; color: #526278; border-bottom: 1px dotted #526278; cursor: help; }
+.localhost-only-tip { display: none; flex: 1 0 100%; padding: 10px 12px; border-radius: 6px; background: #142033; color: #fff; font-size: 12px; font-weight: 500; line-height: 1.45; }
+.localhost-only:hover ~ .localhost-only-tip, .localhost-only:focus ~ .localhost-only-tip, .localhost-only:focus-visible ~ .localhost-only-tip { display: block; }
+.app-update-status { margin: 8px 0 0; min-height: 1.45em; font-size: 12px; line-height: 1.45; color: #526278; }
+.app-update-status.error { color: #9d123c; }
+.app-update-status.ok { color: #18794e; }
 .login-intro .login-disclaimer { font-size: 14px; font-weight: 600; font-style: italic; margin: 0 0 20px; }
 .login-panel :focus-visible { outline: 2px solid #ca004c; outline-offset: 3px; }
 @media (max-width: 820px) {

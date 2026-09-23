@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node --check public/app.js && node --check public/workbench.js && node --check public/finding-model.js && node --check lib/collection.js && node --check lib/operations.js && node --check scripts/generate_report_pdf.mjs",
+    "check": "node --check server.js && node --check public/app.js && node --check public/app-release.js && node --check public/workbench.js && node --check public/finding-model.js && node --check lib/collection.js && node --check lib/operations.js && node --check lib/command-run.js && node --check lib/localhost-gate.js && node --check lib/version-info.js && node --check lib/git-repo.js && node --check lib/update-check.js && node --check lib/apply-update.js && node --check scripts/generate_report_pdf.mjs",
     "test": "node --test tests/*.test.mjs",
     "install:browsers": "playwright install chromium"
   },
