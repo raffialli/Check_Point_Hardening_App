@@ -11,17 +11,43 @@ export function statusBucket(status) {
   return status || "unknown";
 }
 
+const STATUS_LABELS = {action: 'Remediation needed', review: 'Review recommended', manual: 'Manual validation', unknown: 'Unknown', pass: 'Passed', reviewed: 'Reviewed', informational: 'Informational'};
+
+export function statusFilterLabel(key) {
+  return STATUS_LABELS[key] || String(key || '').replaceAll('-', ' ');
+}
+
+export function statusSelectOptions() {
+  return [['', 'All statuses'], ...['action', 'review', 'manual', 'unknown', 'pass', 'reviewed', 'informational'].map(key => [key, STATUS_LABELS[key]])];
+}
+
+export function nextStatusFilter(current = '', key = '') {
+  if (!key || key === 'total' || key === current) return '';
+  return key;
+}
+
+export function summaryChipModel(items = [], activeStatus = '') {
+  return items.map(item => {
+    const interactive = item.count > 0;
+    const pressed = interactive && (item.key === 'total' ? !activeStatus : item.key === activeStatus);
+    return {...item, interactive, pressed};
+  });
+}
+
+export function workbenchStatusFilter() {
+  return saved.status || '';
+}
+
 export function summarizeFindings(checks = []) {
   const counts = new Map();
   for (const check of checks) {
     const key = statusBucket(check.status);
     counts.set(key, (counts.get(key) || 0) + 1);
   }
-  const labels = {action: 'Remediation needed', review: 'Review recommended', manual: 'Manual validation', unknown: 'Unknown', pass: 'Passed', reviewed: 'Reviewed', informational: 'Informational'};
-  const keys = [...Object.keys(labels), ...[...counts.keys()].filter(key => !(key in labels))];
+  const keys = [...Object.keys(STATUS_LABELS), ...[...counts.keys()].filter(key => !(key in STATUS_LABELS))];
   return [{key: 'total', label: 'Total checks', count: checks.length}, ...keys
     .filter(key => counts.has(key) || ['action', 'review', 'manual', 'unknown', 'pass'].includes(key))
-    .map(key => ({key, label: labels[key] || key.replaceAll('-', ' '), count: counts.get(key) || 0}))];
+    .map(key => ({key, label: statusFilterLabel(key), count: counts.get(key) || 0}))];
 }
 
 function element(tag, className, text) {
@@ -130,7 +156,7 @@ function scopesFrom(root, view) {
   return scopes;
 }
 
-export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", viewSwitch, commandPanel, guideLink } = {}) {
+export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", viewSwitch, commandPanel, guideLink, summaryRoot = null } = {}) {
   if (saved.session !== sessionKey) {
     saved = { session: sessionKey, domain: "", scope: "", check: "", query: "", status: "", severity: "" };
     expandedBranches.clear();
@@ -160,7 +186,7 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
     for (const [id, text] of options) { const option = element("option", "", text); option.value = id; select.append(option); }
     select.value = value; return select;
   };
-  const status = makeSelect("Filter by status", [["", "All statuses"], ["action", "Action needed"], ["review", "Review"], ["manual", "Manual"], ["unknown", "Unknown"], ["pass", "Pass"], ["reviewed", "Reviewed"], ["informational", "Informational"]], saved.status);
+  const status = makeSelect("Filter by status", statusSelectOptions(), saved.status);
   const severity = makeSelect("Filter by severity", [["", "All severities"], ["high", "High"], ["medium", "Medium"], ["low", "Low"]], saved.severity);
   filters.append(query, status, severity);
   const count = element("p", "wb-count"); count.setAttribute("role", "status");
@@ -262,7 +288,7 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
     selected?.focus({preventScroll: true});
     selected?.scrollIntoView({block: 'nearest'});
   });
-  const showDomain = () => {
+  const showDomain = ({focusMatch = false} = {}) => {
     saved.domain = domain.key;
     entries = visibleTreeChecks(domain.scopes, saved);
     const found = entries.findIndex(entry => entry.scope.key === saved.scope && entry.check.id === saved.check);
@@ -271,7 +297,9 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
     const filtering = Boolean(saved.query || saved.status || saved.severity);
     const scroll = navList.scrollTop;
     navList.replaceChildren(); let section = '';
-    count.textContent = `${entries.length} ${view === 'categories' ? 'checks' : 'object checks'} in this view`;
+    const countLabel = `${entries.length} ${view === 'categories' ? 'checks' : 'object checks'} in this view`;
+    count.replaceChildren(document.createTextNode(countLabel));
+    if (saved.status) count.append(element('span', 'wb-filter-note', `Showing: ${statusFilterLabel(saved.status)} (${entries.length})`));
     const branch = (key, label, kind) => {
       const node = element('details', 'wb-tree-branch');
       node.dataset.branchKey = key;
@@ -331,10 +359,19 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
     if (!entries.length) {
       navList.append(element('p', 'wb-empty', domain.error || 'No matching checks.'));
       const clear = element('button', '', 'Clear filters'); clear.type = 'button';
-      clear.onclick = () => { if (host.inert) return; saved.query = saved.status = saved.severity = ''; query.value = status.value = severity.value = ''; showDomain(); };
+      clear.onclick = () => { if (host.inert) return; saved.query = saved.status = saved.severity = ''; query.value = status.value = severity.value = ''; syncSummaryChips(); showDomain(); };
       if (filtering) navList.append(clear);
     }
-    showCheck(index); navList.scrollTop = scroll;
+    showCheck(index);
+    if (focusMatch && saved.status) {
+      const target = navList.querySelector('.wb-tree-check');
+      if (target) {
+        target.focus({preventScroll: true});
+        target.scrollIntoView({block: 'nearest'});
+      }
+    } else {
+      navList.scrollTop = scroll;
+    }
   };
   if (domainNodes.length) {
     const domainSelect = makeSelect("Domain", domains.map((item) => [item.key, `${item.title}${item.error ? " — scan failed" : ""}`]), domain.key);
@@ -364,9 +401,41 @@ export function mountWorkbench(host, { view = "hierarchy", sessionKey = "", view
     footer.append(guide);
   }
   nav.append(footer);
+  const syncSummaryChips = () => {
+    if (!summaryRoot) return;
+    for (const button of summaryRoot.querySelectorAll('button[data-status]')) {
+      const pressed = button.dataset.status === 'total' ? !saved.status : button.dataset.status === saved.status;
+      button.setAttribute('aria-pressed', String(pressed));
+      button.classList.toggle('is-active', pressed);
+    }
+  };
+  const ensureStatusOption = (key) => {
+    if (!key || [...status.options].some(option => option.value === key)) return;
+    const option = element('option', '', statusFilterLabel(key));
+    option.value = key;
+    status.append(option);
+  };
+  let focusNextStatusMatch = false;
   for (const control of [query, status, severity]) control.addEventListener(control === query ? "input" : "change", () => {
     if (host.inert) return;
-    saved.query = query.value; saved.status = status.value; saved.severity = severity.value; showDomain();
+    saved.query = query.value; saved.status = status.value; saved.severity = severity.value;
+    syncSummaryChips();
+    const focusMatch = focusNextStatusMatch;
+    focusNextStatusMatch = false;
+    showDomain({focusMatch});
   });
-  host.append(nav, detail); showDomain();
+  // Chips write the existing status select. Filtering stays on saved.status.
+  if (summaryRoot) {
+    for (const button of summaryRoot.querySelectorAll('button[data-status]')) {
+      button.addEventListener('click', () => {
+        if (host.inert) return;
+        const next = nextStatusFilter(saved.status, button.dataset.status);
+        focusNextStatusMatch = Boolean(next);
+        ensureStatusOption(next);
+        status.value = next;
+        status.dispatchEvent(new Event('change'));
+      });
+    }
+  }
+  host.append(nav, detail); syncSummaryChips(); showDomain();
 }

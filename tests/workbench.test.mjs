@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { statusBucket, matchesFinding, scopePresentation, orderNavigationScopes, summarizeFindings, visibleTreeChecks, clusterParentScope } from '../public/workbench.js';
+import { statusBucket, matchesFinding, scopePresentation, orderNavigationScopes, summarizeFindings, visibleTreeChecks, clusterParentScope, nextStatusFilter, summaryChipModel, statusFilterLabel, statusSelectOptions } from '../public/workbench.js';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { checkOwnerScope, canonicalGatewayName, gatewayIdentityKey, displayCellValue, gatewayTargetsForCheck } from '../public/finding-model.js';
@@ -75,6 +75,48 @@ test('all-domain hierarchy uses the selected domain inventory, not root metadata
   assert.ok(!nodes.some(node => node.title === 'CLUSTER-01 (Cluster Object)'));
   assert.ok(!nodes.some(node => node.title === 'WRONG-ROOT'));
 });
+test('summary chips toggle one status bucket and total clears it', () => {
+  assert.equal(nextStatusFilter('', 'action'), 'action');
+  assert.equal(nextStatusFilter('action', 'action'), '');
+  assert.equal(nextStatusFilter('action', 'total'), '');
+  assert.equal(nextStatusFilter('review', 'pass'), 'pass');
+  assert.equal(nextStatusFilter('manual', ''), '');
+  const finding = {title: 'Allowed Hosts', category: 'Gaia', status: 'remediation-required', severity: 'high'};
+  assert.equal(matchesFinding(finding, {status: nextStatusFilter('', 'action')}), true);
+  assert.equal(matchesFinding({...finding, status: 'pass'}, {status: nextStatusFilter('', 'action')}), false);
+});
+
+test('only non-zero summary chips are interactive and pressed follows the active bucket', () => {
+  const items = summarizeFindings([{status: 'remediation-required'}, {status: 'pass'}, {status: 'pass'}]);
+  const idle = summaryChipModel(items, '');
+  assert.equal(idle.find(chip => chip.key === 'total').pressed, true);
+  assert.equal(idle.find(chip => chip.key === 'total').interactive, true);
+  assert.equal(idle.find(chip => chip.key === 'action').interactive, true);
+  assert.equal(idle.find(chip => chip.key === 'action').pressed, false);
+  assert.equal(idle.find(chip => chip.key === 'review').interactive, false);
+  assert.equal(idle.find(chip => chip.key === 'review').pressed, false);
+  assert.equal(idle.find(chip => chip.key === 'unknown').interactive, false);
+  const action = summaryChipModel(items, 'action');
+  assert.equal(action.find(chip => chip.key === 'action').pressed, true);
+  assert.equal(action.find(chip => chip.key === 'action').label, 'Remediation needed');
+  assert.equal(action.find(chip => chip.key === 'total').pressed, false);
+  assert.equal(action.find(chip => chip.key === 'pass').pressed, false);
+});
+
+test('status select display text uses summary strip labels and keeps bucket values', () => {
+  const summary = summarizeFindings([
+    {status: 'remediation-required'}, {status: 'needs-review'}, {status: 'manual'},
+    {status: 'unknown'}, {status: 'pass'}, {status: 'reviewed'}, {status: 'informational'}
+  ]);
+  assert.deepEqual(statusSelectOptions().map(([value]) => value), ['', 'action', 'review', 'manual', 'unknown', 'pass', 'reviewed', 'informational']);
+  for (const [value, label] of statusSelectOptions()) {
+    if (!value) continue;
+    assert.equal(label, summary.find(item => item.key === value).label);
+    assert.equal(label, statusFilterLabel(value));
+  }
+  assert.equal(statusSelectOptions().find(([value]) => value === 'action')[1], 'Remediation needed');
+});
+
 test('filters are conjunctive, case insensitive, and never mutate findings', () => {
   const finding = Object.freeze({ title: 'Allowed Hosts', category: 'Gaia OS Hardening', status: 'needs-review', severity: 'high' });
   assert.ok(matchesFinding(finding, {query: 'GAIA', status: 'review', severity: 'high'}));
